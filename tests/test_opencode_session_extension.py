@@ -1,0 +1,626 @@
+import logging
+
+import httpx
+import pytest
+
+from codex_a2a_serve.config import Settings
+from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
+from tests.helpers import make_settings
+
+_BASE_SETTINGS = {
+    "codex_timeout": 1.0,
+    "a2a_log_level": "DEBUG",
+}
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_requires_bearer_token(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "codex.sessions.list", "params": {}},
+        )
+        assert resp.status_code == 401
+
+        resp = await client.post(
+            "/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.list",
+                "params": {"limit": 10},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert "raw" not in payload["result"]
+        session = payload["result"]["items"][0]
+        assert session["id"] == "s-1"
+        assert session["contextId"] == "s-1"
+        assert session["metadata"]["codex"]["raw"]["id"] == "s-1"
+        assert session["metadata"]["codex"]["title"] == "Session s-1"
+        assert dummy.last_sessions_params is not None
+        assert dummy.last_sessions_params.get("limit") == 10
+
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1", "limit": 5},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 2
+        assert "raw" not in payload["result"]
+        message = payload["result"]["items"][0]
+        assert message["contextId"] == "s-1"
+        assert message["parts"][0]["text"] == "SECRET_HISTORY"
+        assert message["metadata"]["codex"]["session_id"] == "s-1"
+        assert dummy.last_messages_params is not None
+        assert dummy.last_messages_params.get("limit") == 5
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_non_array_upstream_payload(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class WeirdPayloadClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._sessions_payload = {"foo": "bar"}  # no items
+
+    monkeypatch.setattr(app_module, "OpencodeClient", WeirdPayloadClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.list",
+                "params": {},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["error"]["code"] == -32005
+        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_session_title_is_extracted_or_placeholder(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class TitlePayloadClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._sessions_payload = [{"id": "s-1", "title": "My Session"}]
+
+    monkeypatch.setattr(app_module, "OpencodeClient", TitlePayloadClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "codex.sessions.list", "params": {}},
+        )
+        payload = resp.json()
+        session = payload["result"]["items"][0]
+        assert session["id"] == "s-1"
+        assert session["metadata"]["codex"]["title"] == "My Session"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_message_role_and_id_from_info(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class InfoRoleClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._messages_payload = [
+                {
+                    "info": {"id": "msg-1", "role": "user"},
+                    "parts": [{"type": "text", "text": "hello"}],
+                }
+            ]
+
+    monkeypatch.setattr(app_module, "OpencodeClient", InfoRoleClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        payload = resp.json()
+        message = payload["result"]["items"][0]
+        assert message["messageId"] == "msg-1"
+        assert message["role"] == "user"
+        assert message["parts"][0]["text"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_accepts_top_level_list_payload(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class ListPayloadClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._sessions_payload = [{"id": "s-1", "title": "s1"}]
+            self._messages_payload = [
+                {
+                    "info": {"id": "m-1", "role": "assistant"},
+                    "parts": [{"type": "text", "text": "SECRET_HISTORY"}],
+                }
+            ]
+
+    monkeypatch.setattr(app_module, "OpencodeClient", ListPayloadClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "codex.sessions.list", "params": {}},
+        )
+        payload = resp.json()
+        assert payload["result"]["items"][0]["id"] == "s-1"
+
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        payload = resp.json()
+        assert payload["result"]["items"][0]["contextId"] == "s-1"
+        assert payload["result"]["items"][0]["parts"][0]["text"] == "SECRET_HISTORY"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class AltKeyPayloadClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._sessions_payload = {"sessions": [{"id": "s-1"}]}
+            self._messages_payload = {"messages": [{"id": "m-1", "text": "SECRET_HISTORY"}]}
+
+    monkeypatch.setattr(app_module, "OpencodeClient", AltKeyPayloadClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "codex.sessions.list", "params": {}},
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32005
+        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32005
+        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.list",
+                "params": {"cursor": "abc", "limit": 10},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_page_size_pagination(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.list",
+                "params": {"page": 1, "size": 1000},
+            },
+        )
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class NotFoundOpencodeClient(DummyOpencodeClient):
+        async def list_messages(self, session_id: str, *, params=None):
+            request = httpx.Request("GET", "http://codex/session/x/message")
+            response = httpx.Response(404, request=request)
+            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+
+    monkeypatch.setattr(app_module, "OpencodeClient", NotFoundOpencodeClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-404"},
+            },
+        )
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 2
+        assert payload["error"]["code"] == -32001
+        assert payload["error"]["data"]["type"] == "SESSION_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_does_not_log_response_bodies(monkeypatch, caplog):
+    import codex_a2a_serve.app as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
+    caplog.set_level(logging.DEBUG, logger="codex_a2a_serve.app")
+
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=True, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        assert resp.status_code == 200
+
+    # The response contains SECRET_HISTORY but the log middleware must not print bodies for
+    # codex.sessions.* operations.
+    assert "SECRET_HISTORY" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_permission_reply(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class InterruptClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self.permission_reply_calls: list[dict] = []
+
+        async def permission_reply(
+            self,
+            request_id: str,
+            *,
+            reply: str,
+            message: str | None = None,
+            directory: str | None = None,
+        ) -> bool:
+            self.permission_reply_calls.append(
+                {
+                    "request_id": request_id,
+                    "reply": reply,
+                    "message": message,
+                    "directory": directory,
+                }
+            )
+            return True
+
+    dummy = InterruptClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "codex.permission.reply",
+                "params": {
+                    "request_id": "perm-1",
+                    "reply": "once",
+                    "message": "approved by operator",
+                    "directory": "/workspace",
+                },
+            },
+        )
+        payload = resp.json()
+        assert payload.get("error") is None
+        assert payload["result"]["ok"] is True
+        assert payload["result"]["request_id"] == "perm-1"
+        assert payload["result"]["reply"] == "once"
+        assert len(dummy.permission_reply_calls) == 1
+        assert dummy.permission_reply_calls[0]["request_id"] == "perm-1"
+        assert dummy.permission_reply_calls[0]["reply"] == "once"
+        assert dummy.permission_reply_calls[0]["directory"] == "/workspace"
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_rejects_legacy_permission_fields(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 111,
+                "method": "codex.permission.reply",
+                "params": {"requestID": "perm-legacy", "decision": "allow"},
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class InterruptClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self.question_reply_calls: list[dict] = []
+            self.question_reject_calls: list[dict] = []
+
+        async def question_reply(
+            self,
+            request_id: str,
+            *,
+            answers: list[list[str]],
+            directory: str | None = None,
+        ) -> bool:
+            self.question_reply_calls.append(
+                {"request_id": request_id, "answers": answers, "directory": directory}
+            )
+            return True
+
+        async def question_reject(
+            self,
+            request_id: str,
+            *,
+            directory: str | None = None,
+        ) -> bool:
+            self.question_reject_calls.append({"request_id": request_id, "directory": directory})
+            return True
+
+    dummy = InterruptClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        reply_resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "codex.question.reply",
+                "params": {"request_id": "q-1", "answers": [["A"], ["B"]]},
+            },
+        )
+        reply_payload = reply_resp.json()
+        assert reply_payload["result"]["ok"] is True
+        assert reply_payload["result"]["request_id"] == "q-1"
+        assert dummy.question_reply_calls[0]["answers"] == [["A"], ["B"]]
+
+        reject_resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "codex.question.reject",
+                "params": {"request_id": "q-2"},
+            },
+        )
+        reject_payload = reject_resp.json()
+        assert reject_payload["result"]["ok"] is True
+        assert dummy.question_reject_calls[0]["request_id"] == "q-2"
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    class NotFoundInterruptClient(DummyOpencodeClient):
+        async def permission_reply(
+            self,
+            request_id: str,
+            *,
+            reply: str,
+            message: str | None = None,
+            directory: str | None = None,
+        ) -> bool:
+            del request_id, reply, message, directory
+            request = httpx.Request("POST", "http://codex/permission/x/reply")
+            response = httpx.Response(404, request=request)
+            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+
+    monkeypatch.setattr(app_module, "OpencodeClient", NotFoundInterruptClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "codex.permission.reply",
+                "params": {"request_id": "perm-404", "reply": "reject"},
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32004
+        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
