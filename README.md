@@ -111,7 +111,11 @@ For full configuration, see `docs/guide.md`. Most commonly used options:
 - `CODEX_CLI_BIN`: Codex CLI binary path (default: `codex`)
 - `CODEX_APP_SERVER_LISTEN`: Codex app-server transport (default: `stdio://`)
 - `CODEX_MODEL`: default model for `thread/start` (default: `gpt-5.1-codex`)
-- `CODEX_DIRECTORY`: default `cwd` (optional; controlled by server and cannot be overridden by clients)
+- `CODEX_MODEL_ID`: optional per-turn model override for `turn/start`
+- `CODEX_DIRECTORY`: default `cwd` (optional). Clients may pass `metadata.directory`
+  only when `A2A_ALLOW_DIRECTORY_OVERRIDE=true` and the path stays inside the allowed workspace.
+- `CODEX_TIMEOUT_STREAM`: optional timeout for streaming send path.
+  Unset means no explicit stream timeout (the turn waits until completion).
 - `A2A_BEARER_TOKEN`: required bearer token for authentication
 - `A2A_PUBLIC_URL`: externally reachable URL prefix exposed in Agent Card
 - `A2A_PROJECT`: optional project label injected into Agent Card metadata/examples

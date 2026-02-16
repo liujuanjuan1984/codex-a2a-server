@@ -18,6 +18,7 @@ _UNSET = object()
 _DEFAULT_CLIENT_NAME = "codex_a2a_serve"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Serve"
 _DEFAULT_CLIENT_VERSION = "0.1.0"
+_EVENT_QUEUE_MAXSIZE = 2048
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,7 @@ class OpencodeClient:
         self._next_request_id = 1
         self._pending_requests: dict[str, asyncio.Future[Any]] = {}
         self._pending_server_requests: dict[str, _PendingServerRequest] = {}
-        self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2048)
+        self._event_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._turn_trackers: dict[tuple[str, str], _TurnTracker] = {}
 
     async def close(self) -> None:
@@ -303,15 +304,18 @@ class OpencodeClient:
             raise RuntimeError(f"codex rpc timeout: {method}") from exc
 
     async def _enqueue_stream_event(self, event: dict[str, Any]) -> None:
-        try:
-            self._event_queue.put_nowait(event)
-        except asyncio.QueueFull:
-            # Avoid backpressure deadlocks in degraded situations.
-            logger.warning("codex event queue full; dropping oldest event")
-            with contextlib.suppress(asyncio.QueueEmpty):
-                _ = self._event_queue.get_nowait()
-            with contextlib.suppress(asyncio.QueueFull):
-                self._event_queue.put_nowait(event)
+        if not self._event_subscribers:
+            return
+        for queue in tuple(self._event_subscribers):
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                # Avoid backpressure deadlocks in degraded situations.
+                logger.warning("codex event queue full; dropping oldest event")
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    _ = queue.get_nowait()
+                with contextlib.suppress(asyncio.QueueFull):
+                    queue.put_nowait(event)
 
     def _get_or_create_tracker(self, thread_id: str, turn_id: str) -> _TurnTracker:
         key = (thread_id, turn_id)
@@ -520,23 +524,34 @@ class OpencodeClient:
             )
             return
 
-        # For unsupported server-initiated requests, respond with an empty object
-        # to unblock the turn instead of hanging indefinitely.
-        await self._send_json_message({"id": request_id, "result": {}})
+        await self._send_json_message(
+            {
+                "id": request_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Unsupported server request method: {method}",
+                },
+            }
+        )
 
     async def stream_events(
         self, stop_event: asyncio.Event | None = None, *, directory: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
         del directory
         await self._ensure_started()
-        while True:
-            if stop_event and stop_event.is_set():
-                break
-            try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=0.25)
-            except TimeoutError:
-                continue
-            yield event
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=_EVENT_QUEUE_MAXSIZE)
+        self._event_subscribers.add(queue)
+        try:
+            while True:
+                if stop_event and stop_event.is_set():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.25)
+                except TimeoutError:
+                    continue
+                yield event
+        finally:
+            self._event_subscribers.discard(queue)
 
     async def create_session(
         self, title: str | None = None, *, directory: str | None = None
@@ -643,11 +658,15 @@ class OpencodeClient:
         directory: str | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
-        timeout_seconds = self._request_timeout
-        if timeout_override is not _UNSET and timeout_override is not None:
-            timeout_seconds = float(timeout_override)
-        if timeout_seconds <= 0:
+        timeout_seconds: float | None
+        if timeout_override is _UNSET:
             timeout_seconds = self._request_timeout
+        elif timeout_override is None:
+            timeout_seconds = None
+        else:
+            timeout_seconds = float(timeout_override)
+            if timeout_seconds <= 0:
+                timeout_seconds = self._request_timeout
 
         params: dict[str, Any] = {
             "threadId": session_id,
@@ -671,21 +690,27 @@ class OpencodeClient:
         if not isinstance(turn_id, str) or not turn_id.strip():
             raise RuntimeError("codex turn/start response missing turn id")
 
-        tracker = self._get_or_create_tracker(session_id, turn_id.strip())
+        turn_id = turn_id.strip()
+        tracker_key = (session_id, turn_id)
+        tracker = self._get_or_create_tracker(session_id, turn_id)
         try:
-            await asyncio.wait_for(tracker.completed.wait(), timeout=timeout_seconds)
+            if timeout_seconds is None:
+                await tracker.completed.wait()
+            else:
+                await asyncio.wait_for(tracker.completed.wait(), timeout=timeout_seconds)
+            if tracker.error:
+                raise RuntimeError(f"codex turn failed: {tracker.error}")
+            return OpencodeMessage(
+                text=tracker.text,
+                session_id=session_id,
+                message_id=tracker.message_id,
+                raw={"turn": tracker.raw_turn or turn},
+            )
         except TimeoutError as exc:
             raise RuntimeError("codex turn did not complete before timeout") from exc
-
-        if tracker.error:
-            raise RuntimeError(f"codex turn failed: {tracker.error}")
-
-        return OpencodeMessage(
-            text=tracker.text,
-            session_id=session_id,
-            message_id=tracker.message_id,
-            raw={"turn": tracker.raw_turn or turn},
-        )
+        finally:
+            # Completed/failed/timeout turns should not accumulate indefinitely.
+            self._turn_trackers.pop(tracker_key, None)
 
     async def _reply_to_server_request(self, request_id: str, result: dict[str, Any]) -> None:
         pending = self._pending_server_requests.get(request_id)
@@ -706,6 +731,7 @@ class OpencodeClient:
                 "type": resolved_type,
                 "properties": {
                     "id": request_id,
+                    "requestID": request_id,
                     "sessionID": session_id,
                 },
             }
@@ -778,6 +804,7 @@ class OpencodeClient:
                 "type": "question.rejected",
                 "properties": {
                     "id": request_id,
+                    "requestID": request_id,
                     "sessionID": session_id,
                 },
             }

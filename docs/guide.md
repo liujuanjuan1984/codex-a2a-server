@@ -14,17 +14,20 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 
 ## Environment Variables
 
-- `OPENCODE_BASE_URL`: Codex base URL, default `http://127.0.0.1:4096`
-- `OPENCODE_DIRECTORY`: Codex `directory` parameter (optional)
-- `OPENCODE_PROVIDER_ID`: model `providerID` (optional)
-- `OPENCODE_MODEL_ID`: model `modelID` (optional)
-- `OPENCODE_AGENT`: Codex agent name (optional)
-- `OPENCODE_SYSTEM`: system prompt (optional)
-- `OPENCODE_VARIANT`: variant (optional)
-- `OPENCODE_TIMEOUT`: request timeout in seconds, default `120`
-  (systemd deployment template writes `300` by default)
-- `OPENCODE_TIMEOUT_STREAM`: streaming request timeout in seconds (optional;
-  unset means no explicit stream timeout)
+- `CODEX_CLI_BIN`: Codex CLI binary path, default `codex`
+- `CODEX_APP_SERVER_LISTEN`: Codex app-server listen target, default `stdio://`
+- `CODEX_MODEL`: default model passed to `thread/start`, default `gpt-5.1-codex`
+- `CODEX_MODEL_ID`: per-turn model override passed to `turn/start` (optional)
+- `CODEX_DIRECTORY`: default Codex working directory (optional)
+- `CODEX_PROVIDER_ID`: deployment metadata only (optional)
+- `CODEX_AGENT`: deployment metadata only (optional)
+- `CODEX_SYSTEM`: reserved compatibility field (optional)
+- `CODEX_VARIANT`: deployment metadata only (optional)
+- `CODEX_TIMEOUT`: request timeout in seconds, default `120`
+  (systemd deployment template may write `300` by default)
+- `CODEX_TIMEOUT_STREAM`: streaming turn timeout in seconds (optional);
+  unset means no explicit stream timeout for the streaming send path
+- `CODEX_BASE_URL`: reserved compatibility field for legacy HTTP mode; not used by app-server mode
 
 - `A2A_PUBLIC_URL`: externally reachable A2A URL prefix,
   default `http://127.0.0.1:8000`
@@ -49,6 +52,9 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 - `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
   `(identity, contextId) -> Codex session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
+
+Compatibility note:
+- Legacy `OPENCODE_*` keys are accepted as fallback aliases for the corresponding `CODEX_*` settings.
 
 ## Service Behavior
 
@@ -90,7 +96,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   - Failure events include concrete error details with `failed` state.
 - Directory validation and normalization:
   - Clients can pass `metadata.directory`, but it must stay inside
-    `${OPENCODE_DIRECTORY}` (or service runtime root if not configured).
+    `${CODEX_DIRECTORY}` (or service runtime root if not configured).
   - All paths are normalized with `realpath` to prevent `..` or symlink
     boundary bypass.
   - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is

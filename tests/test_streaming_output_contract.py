@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
+from codex_a2a_serve.agent import OpencodeAgentExecutor, _extract_interrupt_resolved_event
 from codex_a2a_serve.codex_client import OpencodeMessage
 from tests.helpers import DummyEventQueue, make_request_context, make_settings
 
@@ -448,6 +448,17 @@ def _unique(items: list[str]) -> list[str]:
         seen.add(item)
         ordered.append(item)
     return ordered
+
+
+def test_extract_interrupt_resolved_event_accepts_request_id_aliases() -> None:
+    legacy = _extract_interrupt_resolved_event(
+        {"type": "permission.replied", "properties": {"requestID": "perm-1"}}
+    )
+    modern = _extract_interrupt_resolved_event(
+        {"type": "permission.replied", "properties": {"id": "perm-2"}}
+    )
+    assert legacy == {"request_id": "perm-1", "event_type": "permission.replied"}
+    assert modern == {"request_id": "perm-2", "event_type": "permission.replied"}
 
 
 @pytest.mark.asyncio

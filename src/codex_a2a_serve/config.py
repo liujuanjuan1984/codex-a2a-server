@@ -15,7 +15,8 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    # Codex settings
+    # Codex settings (app-server mode)
+    # `codex_base_url` is retained for legacy compatibility only.
     codex_base_url: str = Field(
         default="http://127.0.0.1:4096",
         validation_alias=AliasChoices("CODEX_BASE_URL", "OPENCODE_BASE_URL"),

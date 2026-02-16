@@ -1417,7 +1417,7 @@ def _extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
 def _extract_interrupt_resolved_request_id(props: Mapping[str, Any]) -> str | None:
     return _extract_first_nonempty_string(
         props,
-        ("requestID",),
+        ("requestID", "id"),
     )
 
 
