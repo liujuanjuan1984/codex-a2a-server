@@ -49,6 +49,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["deployment_context"]["project"] == "alpha"
     assert session_query.params["shared_workspace_across_consumers"] is True
     assert session_query.params["tenant_isolation"] == "none"
+    assert session_query.params["supported_metadata"] == ["codex.directory"]
 
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["deployment_context"]["project"] == "alpha"

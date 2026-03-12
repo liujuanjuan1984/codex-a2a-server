@@ -149,13 +149,18 @@ def _validate_prompt_async_request(payload: dict[str, Any]) -> None:
 
 def _validate_command_request(payload: dict[str, Any]) -> None:
     _validate_allowed_fields(payload, allowed_fields=COMMAND_ALLOWED_FIELDS)
-    for key in ("command", "arguments"):
-        value = payload.get(key)
-        if not isinstance(value, str) or not value.strip():
-            _raise_control_validation_error(
-                field=f"request.{key}",
-                message=f"request.{key} must be a non-empty string",
-            )
+    command = payload.get("command")
+    if not isinstance(command, str) or not command.strip():
+        _raise_control_validation_error(
+            field="request.command",
+            message="request.command must be a non-empty string",
+        )
+    arguments = payload.get("arguments")
+    if arguments is not None and not isinstance(arguments, str):
+        _raise_control_validation_error(
+            field="request.arguments",
+            message="request.arguments must be a string",
+        )
     message_id = payload.get("messageID")
     if message_id is not None and not isinstance(message_id, str):
         _raise_control_validation_error(

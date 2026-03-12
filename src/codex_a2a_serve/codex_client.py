@@ -749,7 +749,7 @@ class OpencodeClient:
         directory: str | None = None,
     ) -> OpencodeMessage:
         command = str(request["command"]).strip()
-        arguments = str(request["arguments"]).strip()
+        arguments = str(request.get("arguments", "")).strip()
         prompt = f"/{command}" if not arguments else f"/{command} {arguments}"
         return await self.send_message(session_id, prompt, directory=directory)
 

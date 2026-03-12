@@ -205,7 +205,7 @@ class DummySessionQueryOpencodeClient:
             "directory": directory,
         }
         return OpencodeMessage(
-            text=f"command:{request['command']} {request['arguments']}".strip(),
+            text=f"command:{request['command']} {request.get('arguments', '')}".strip(),
             session_id=session_id,
             message_id=request.get("messageID") or "cmd-1",
             raw={"request": request},

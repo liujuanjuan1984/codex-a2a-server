@@ -514,6 +514,52 @@ async def test_session_control_command_maps_response_to_a2a_message(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_session_control_command_accepts_missing_arguments(monkeypatch):
+    import codex_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 221,
+                "method": "codex.sessions.command",
+                "params": {
+                    "session_id": "s-1",
+                    "request": {
+                        "command": "plan",
+                        "messageID": "cmd-msg-2",
+                    },
+                },
+            },
+        )
+        payload = resp.json()
+        item = payload["result"]["item"]
+        assert item["contextId"] == "s-1"
+        assert item["messageId"] == "cmd-msg-2"
+        assert item["parts"][0]["text"] == "command:plan"
+        assert dummy.last_command == {
+            "session_id": "s-1",
+            "request": {
+                "command": "plan",
+                "messageID": "cmd-msg-2",
+            },
+            "directory": None,
+        }
+
+
+@pytest.mark.asyncio
 async def test_session_control_shell_maps_response_to_a2a_message(monkeypatch):
     import codex_a2a_serve.app as app_module
 

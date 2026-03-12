@@ -45,14 +45,12 @@ def build_session_query_extension_params(
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
         "deployment_context": deployment_context,
-        "supported_metadata": ["codex_session_id", "directory", "codex.directory"],
+        "supported_metadata": ["codex.directory"],
         "result_envelope": {
             "by_method": {
                 SESSION_QUERY_METHODS["list_sessions"]: {"fields": ["items"]},
                 SESSION_QUERY_METHODS["get_session_messages"]: {"fields": ["items"]},
-                SESSION_QUERY_METHODS["prompt_async"]: {
-                    "fields": ["ok", "session_id", "turn_id"]
-                },
+                SESSION_QUERY_METHODS["prompt_async"]: {"fields": ["ok", "session_id", "turn_id"]},
                 SESSION_QUERY_METHODS["command"]: {"fields": ["item"]},
                 SESSION_QUERY_METHODS["shell"]: {"fields": ["item"]},
             }
