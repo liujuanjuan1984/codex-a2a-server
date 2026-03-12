@@ -321,7 +321,7 @@ async def test_execute_serializes_send_message_per_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_drops_events_without_message_id_and_falls_back_to_snapshot() -> None:
+async def test_streaming_emits_events_without_message_id_using_stable_fallback() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
             _event(
@@ -332,7 +332,7 @@ async def test_streaming_drops_events_without_message_id_and_falls_back_to_snaps
                 message_id=None,
             ),
         ],
-        response_text="final answer from send_message",
+        response_text="stream chunk without id",
         response_message_id=None,
     )
     executor = OpencodeAgentExecutor(client, streaming_enabled=True)
@@ -346,8 +346,8 @@ async def test_streaming_drops_events_without_message_id_and_falls_back_to_snaps
     updates = _artifact_updates(queue)
     assert len(updates) == 1
     update = updates[0]
-    assert _part_text(update) == "final answer from send_message"
-    assert update.artifact.metadata["codex"]["source"] == "final_snapshot"
+    assert _part_text(update) == "stream chunk without id"
+    assert update.artifact.metadata["codex"]["source"] == "delta"
     assert update.artifact.metadata["codex"]["block_type"] == "text"
     assert update.artifact.metadata["codex"]["message_id"] == "task-6:ctx-6:assistant"
     assert update.artifact.metadata["codex"]["event_id"] == "task-6:ctx-6:task-6:stream:1"
