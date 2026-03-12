@@ -151,6 +151,8 @@ class DummyChatOpencodeClient:
 
 class DummySessionQueryOpencodeClient:
     def __init__(self, _settings: Settings) -> None:
+        self.directory = "/workspace"
+        self.settings = _settings
         self._sessions_payload = [{"id": "s-1", "title": "Session s-1"}]
         self._messages_payload = [
             {
@@ -160,6 +162,9 @@ class DummySessionQueryOpencodeClient:
         ]
         self.last_sessions_params = None
         self.last_messages_params = None
+        self.last_prompt_async: dict[str, Any] | None = None
+        self.last_command: dict[str, Any] | None = None
+        self.last_shell: dict[str, Any] | None = None
 
     async def close(self) -> None:
         return None
@@ -172,6 +177,57 @@ class DummySessionQueryOpencodeClient:
         assert session_id
         self.last_messages_params = params
         return self._messages_payload
+
+    async def session_prompt_async(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        self.last_prompt_async = {
+            "session_id": session_id,
+            "request": request,
+            "directory": directory,
+        }
+        return {"ok": True, "session_id": session_id, "turn_id": "turn-1"}
+
+    async def session_command(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> OpencodeMessage:
+        self.last_command = {
+            "session_id": session_id,
+            "request": request,
+            "directory": directory,
+        }
+        return OpencodeMessage(
+            text=f"command:{request['command']} {request['arguments']}".strip(),
+            session_id=session_id,
+            message_id=request.get("messageID") or "cmd-1",
+            raw={"request": request},
+        )
+
+    async def session_shell(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        self.last_shell = {
+            "session_id": session_id,
+            "request": request,
+            "directory": directory,
+        }
+        return {
+            "info": {"id": "shell-1", "role": "assistant"},
+            "parts": [{"type": "text", "text": f"stdout\n$ {request['command']}"}],
+            "raw": {"request": request},
+        }
 
     async def permission_reply(
         self,

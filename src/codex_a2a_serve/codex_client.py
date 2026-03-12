@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import os
+import shlex
 import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -712,6 +713,80 @@ class OpencodeClient:
             # Completed/failed/timeout turns should not accumulate indefinitely.
             self._turn_trackers.pop(tracker_key, None)
 
+    async def session_prompt_async(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "threadId": session_id,
+            "input": _convert_request_parts_to_turn_input(request),
+        }
+        if directory:
+            params["cwd"] = directory
+        elif self._directory:
+            params["cwd"] = self._directory
+        if self._model_id:
+            params["model"] = self._model_id
+        result = await self._rpc_request("turn/start", params)
+        if not isinstance(result, dict):
+            raise RuntimeError("codex turn/start response missing result object")
+        turn = result.get("turn")
+        if not isinstance(turn, dict):
+            raise RuntimeError("codex turn/start response missing turn")
+        turn_id = turn.get("id")
+        if not isinstance(turn_id, str) or not turn_id.strip():
+            raise RuntimeError("codex turn/start response missing turn id")
+        return {"ok": True, "session_id": session_id, "turn_id": turn_id.strip()}
+
+    async def session_command(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> OpencodeMessage:
+        command = str(request["command"]).strip()
+        arguments = str(request["arguments"]).strip()
+        prompt = f"/{command}" if not arguments else f"/{command} {arguments}"
+        return await self.send_message(session_id, prompt, directory=directory)
+
+    async def session_shell(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        command_text = str(request["command"]).strip()
+        if not command_text:
+            raise RuntimeError("shell command must not be empty")
+        result = await self._rpc_request(
+            "command/exec",
+            _build_shell_exec_params(
+                command=shlex.split(command_text),
+                directory=directory,
+                default_directory=self._directory,
+            ),
+        )
+        if not isinstance(result, dict):
+            raise RuntimeError("codex command/exec response missing result object")
+        return {
+            "info": {
+                "id": f"shell:{session_id}:{uuid_like_suffix(command_text)}",
+                "role": "assistant",
+            },
+            "parts": [
+                {
+                    "type": "text",
+                    "text": _format_shell_response(result),
+                }
+            ],
+            "raw": result,
+        }
+
     async def _reply_to_server_request(self, request_id: str, result: dict[str, Any]) -> None:
         pending = self._pending_server_requests.get(request_id)
         if not pending:
@@ -811,3 +886,56 @@ class OpencodeClient:
         )
         self._pending_server_requests.pop(request_id, None)
         return True
+
+
+def _convert_request_parts_to_turn_input(request: dict[str, Any]) -> list[dict[str, Any]]:
+    parts = request.get("parts")
+    if not isinstance(parts, list):
+        raise RuntimeError("request.parts must be an array")
+    converted: list[dict[str, Any]] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            raise RuntimeError("request.parts items must be objects")
+        part_type = part.get("type")
+        if part_type != "text":
+            raise RuntimeError("Only text request.parts are currently supported")
+        text = part.get("text")
+        if not isinstance(text, str):
+            raise RuntimeError("request.parts[].text must be a string")
+        converted.append({"type": "text", "text": text, "text_elements": []})
+    return converted
+
+
+def _format_shell_response(result: dict[str, Any]) -> str:
+    exit_code = result.get("exitCode")
+    stdout = result.get("stdout")
+    stderr = result.get("stderr")
+    lines: list[str] = [f"exit_code: {exit_code}"]
+    if isinstance(stdout, str) and stdout:
+        lines.append("stdout:")
+        lines.append(stdout.rstrip())
+    if isinstance(stderr, str) and stderr:
+        lines.append("stderr:")
+        lines.append(stderr.rstrip())
+    return "\n".join(lines)
+
+
+def _build_shell_exec_params(
+    *,
+    command: list[str],
+    directory: str | None,
+    default_directory: str | None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"command": command}
+    if directory:
+        params["cwd"] = directory
+    elif default_directory:
+        params["cwd"] = default_directory
+    return params
+
+
+def uuid_like_suffix(value: str) -> str:
+    normalized = value.strip().replace(" ", "-")
+    if not normalized:
+        return "empty"
+    return normalized[:32]

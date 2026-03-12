@@ -701,6 +701,37 @@ class OpencodeAgentExecutor(AgentExecutor):
             if self._pending_session_claims.get(session_id) == identity:
                 self._pending_session_claims.pop(session_id, None)
 
+    async def claim_session(self, *, identity: str, session_id: str) -> bool:
+        async with self._lock:
+            owner = self._session_owners.get(session_id)
+            pending_owner = self._pending_session_claims.get(session_id)
+            if owner and owner != identity:
+                raise PermissionError(f"Session {session_id} is not owned by you")
+            if pending_owner and pending_owner != identity:
+                raise PermissionError(f"Session {session_id} is not owned by you")
+            if owner == identity:
+                return False
+            self._pending_session_claims[session_id] = identity
+            return True
+
+    async def finalize_session_claim(self, *, identity: str, session_id: str) -> None:
+        async with self._lock:
+            owner = self._session_owners.get(session_id)
+            pending_owner = self._pending_session_claims.get(session_id)
+            if owner and owner != identity:
+                raise PermissionError(f"Session {session_id} is not owned by you")
+            if pending_owner and pending_owner != identity:
+                raise PermissionError(f"Session {session_id} is not owned by you")
+            self._session_owners.set(session_id, identity)
+            if pending_owner == identity:
+                self._pending_session_claims.pop(session_id, None)
+
+    async def release_session_claim(self, *, identity: str, session_id: str) -> None:
+        await self._release_preferred_session_claim(identity=identity, session_id=session_id)
+
+    def resolve_directory(self, requested: str | None) -> str | None:
+        return self._resolve_and_validate_directory(requested)
+
     async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
         async with self._lock:
             lock = self._session_locks.get(session_id)

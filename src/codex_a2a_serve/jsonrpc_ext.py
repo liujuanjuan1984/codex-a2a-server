@@ -24,11 +24,17 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .codex_client import OpencodeClient
+from .extension_contracts import (
+    COMMAND_ALLOWED_FIELDS,
+    PROMPT_ASYNC_ALLOWED_FIELDS,
+    SHELL_ALLOWED_FIELDS,
+)
 from .text_parts import extract_text_from_parts
 
 logger = logging.getLogger(__name__)
 
 ERR_SESSION_NOT_FOUND = -32001
+ERR_SESSION_FORBIDDEN = -32006
 ERR_UPSTREAM_UNREACHABLE = -32002
 ERR_UPSTREAM_HTTP_ERROR = -32003
 ERR_INTERRUPT_NOT_FOUND = -32004
@@ -82,6 +88,90 @@ def _parse_positive_int(value: Any, *, field: str) -> int | None:
     if parsed < 1:
         raise ValueError(f"{field} must be >= 1")
     return parsed
+
+
+class _ControlValidationError(ValueError):
+    def __init__(self, *, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
+def _raise_control_validation_error(*, field: str, message: str) -> None:
+    raise _ControlValidationError(field=field, message=message)
+
+
+def _validate_allowed_fields(
+    payload: dict[str, Any],
+    *,
+    allowed_fields: tuple[str, ...],
+) -> None:
+    unknown_fields = sorted(set(payload) - set(allowed_fields))
+    if unknown_fields:
+        joined = ", ".join(f"request.{field}" for field in unknown_fields)
+        _raise_control_validation_error(
+            field="request",
+            message=f"Unsupported fields: {joined}",
+        )
+
+
+def _validate_prompt_async_request(payload: dict[str, Any]) -> None:
+    _validate_allowed_fields(payload, allowed_fields=PROMPT_ASYNC_ALLOWED_FIELDS)
+    parts = payload.get("parts")
+    if not isinstance(parts, list) or not parts:
+        _raise_control_validation_error(
+            field="request.parts",
+            message="request.parts must be a non-empty array",
+        )
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            _raise_control_validation_error(
+                field=f"request.parts[{index}]",
+                message=f"request.parts[{index}] must be an object",
+            )
+        if part.get("type") != "text":
+            _raise_control_validation_error(
+                field=f"request.parts[{index}].type",
+                message="Only text request parts are currently supported",
+            )
+        if not isinstance(part.get("text"), str):
+            _raise_control_validation_error(
+                field=f"request.parts[{index}].text",
+                message=f"request.parts[{index}].text must be a string",
+            )
+    for key in ("messageID", "agent", "system", "variant"):
+        value = payload.get(key)
+        if value is not None and not isinstance(value, str):
+            _raise_control_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a string",
+            )
+
+
+def _validate_command_request(payload: dict[str, Any]) -> None:
+    _validate_allowed_fields(payload, allowed_fields=COMMAND_ALLOWED_FIELDS)
+    for key in ("command", "arguments"):
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            _raise_control_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a non-empty string",
+            )
+    message_id = payload.get("messageID")
+    if message_id is not None and not isinstance(message_id, str):
+        _raise_control_validation_error(
+            field="request.messageID",
+            message="request.messageID must be a string",
+        )
+
+
+def _validate_shell_request(payload: dict[str, Any]) -> None:
+    _validate_allowed_fields(payload, allowed_fields=SHELL_ALLOWED_FIELDS)
+    command = payload.get("command")
+    if not isinstance(command, str) or not command.strip():
+        _raise_control_validation_error(
+            field="request.command",
+            message="request.command must be a non-empty string",
+        )
 
 
 def _extract_session_title(session: dict[str, Any]) -> str:
@@ -144,6 +234,21 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     return msg.model_dump(by_alias=True, exclude_none=True)
 
 
+def _message_to_item(message: Any) -> dict[str, Any]:
+    if hasattr(message, "message_id") and hasattr(message, "text"):
+        return {
+            "info": {
+                "id": getattr(message, "message_id", None) or "msg-shell",
+                "role": "assistant",
+            },
+            "parts": [{"type": "text", "text": getattr(message, "text", "")}],
+            "raw": getattr(message, "raw", {}),
+        }
+    if isinstance(message, dict):
+        return message
+    raise ValueError("Unsupported session control response payload")
+
+
 def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:
     """Extract list payloads from Codex responses."""
     if isinstance(raw_result, list):
@@ -163,15 +268,26 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *args: Any,
         codex_client: OpencodeClient,
         methods: dict[str, str],
+        directory_resolver=None,
+        session_claim=None,
+        session_claim_finalize=None,
+        session_claim_release=None,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
         self._codex_client = codex_client
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session_messages = methods["get_session_messages"]
+        self._method_prompt_async = methods["prompt_async"]
+        self._method_command = methods["command"]
+        self._method_shell = methods["shell"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
+        self._directory_resolver = directory_resolver
+        self._session_claim = session_claim
+        self._session_claim_finalize = session_claim_finalize
+        self._session_claim_release = session_claim_release
 
     async def _handle_requests(self, request: Request) -> Response:
         # Fast path: sniff method first then either handle here or delegate.
@@ -198,12 +314,20 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             self._method_list_sessions,
             self._method_get_session_messages,
         }
+        session_control_methods = {
+            self._method_prompt_async,
+            self._method_command,
+            self._method_shell,
+        }
         interrupt_callback_methods = {
             self._method_reply_permission,
             self._method_reply_question,
             self._method_reject_question,
         }
-        if base_request.method not in session_query_methods | interrupt_callback_methods:
+        supported_methods = (
+            session_query_methods | session_control_methods | interrupt_callback_methods
+        )
+        if base_request.method not in supported_methods:
             return await super()._handle_requests(request)
 
         params = base_request.params or {}
@@ -215,6 +339,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
         if base_request.method in session_query_methods:
             return await self._handle_session_query_request(base_request, params)
+        if base_request.method in session_control_methods:
+            return await self._handle_session_control_request(base_request, params, request=request)
         return await self._handle_interrupt_callback_request(base_request, params)
 
     async def _handle_session_query_request(
@@ -396,6 +522,251 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             base_request.id,
             result,
         )
+
+    def _session_forbidden_response(
+        self,
+        request_id: str | int | None,
+        *,
+        session_id: str,
+    ) -> Response:
+        return self._generate_error_response(
+            request_id,
+            JSONRPCError(
+                code=ERR_SESSION_FORBIDDEN,
+                message="Session forbidden",
+                data={"type": "SESSION_FORBIDDEN", "session_id": session_id},
+            ),
+        )
+
+    def _extract_directory_from_metadata(
+        self,
+        *,
+        request_id: str | int | None,
+        params: dict[str, Any],
+    ) -> tuple[str | None, Response | None]:
+        metadata = params.get("metadata")
+        if metadata is None:
+            return None, None
+        if not isinstance(metadata, dict):
+            return None, self._generate_error_response(
+                request_id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata"},
+                    )
+                ),
+            )
+        raw_codex_metadata = metadata.get("codex")
+        if raw_codex_metadata is None:
+            return None, None
+        if not isinstance(raw_codex_metadata, dict):
+            return None, self._generate_error_response(
+                request_id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata.codex must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata.codex"},
+                    )
+                ),
+            )
+        directory = raw_codex_metadata.get("directory")
+        if directory is not None and not isinstance(directory, str):
+            return None, self._generate_error_response(
+                request_id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata.codex.directory must be a string",
+                        data={"type": "INVALID_FIELD", "field": "metadata.codex.directory"},
+                    )
+                ),
+            )
+        return directory, None
+
+    async def _handle_session_control_request(
+        self,
+        base_request: JSONRPCRequest,
+        params: dict[str, Any],
+        *,
+        request: Request,
+    ) -> Response:
+        allowed_fields = {"session_id", "request", "metadata"}
+        unknown_fields = sorted(set(params) - allowed_fields)
+        if unknown_fields:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=f"Unsupported fields: {', '.join(unknown_fields)}",
+                        data={"type": "INVALID_FIELD", "fields": unknown_fields},
+                    )
+                ),
+            )
+
+        session_id = params.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="Missing required params.session_id",
+                        data={"type": "MISSING_FIELD", "field": "session_id"},
+                    )
+                ),
+            )
+        session_id = session_id.strip()
+
+        raw_request = params.get("request")
+        if not isinstance(raw_request, dict):
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="params.request must be an object",
+                        data={"type": "INVALID_FIELD", "field": "request"},
+                    )
+                ),
+            )
+
+        try:
+            if base_request.method == self._method_prompt_async:
+                _validate_prompt_async_request(raw_request)
+            elif base_request.method == self._method_command:
+                _validate_command_request(raw_request)
+            elif base_request.method == self._method_shell:
+                _validate_shell_request(raw_request)
+        except _ControlValidationError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=str(exc),
+                        data={"type": "INVALID_FIELD", "field": exc.field},
+                    )
+                ),
+            )
+
+        directory, metadata_error = self._extract_directory_from_metadata(
+            request_id=base_request.id,
+            params=params,
+        )
+        if metadata_error is not None:
+            return metadata_error
+        if directory is not None and self._directory_resolver is not None:
+            try:
+                directory = self._directory_resolver(directory)
+            except ValueError as exc:
+                return self._generate_error_response(
+                    base_request.id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message=str(exc),
+                            data={"type": "INVALID_FIELD", "field": "metadata.codex.directory"},
+                        )
+                    ),
+                )
+
+        identity = getattr(request.state, "user_identity", None)
+        pending_claim = False
+        claim_finalized = False
+        if isinstance(identity, str) and identity and self._session_claim is not None:
+            try:
+                pending_claim = await self._session_claim(identity=identity, session_id=session_id)
+            except PermissionError:
+                return self._session_forbidden_response(base_request.id, session_id=session_id)
+
+        try:
+            if base_request.method == self._method_prompt_async:
+                result = await self._codex_client.session_prompt_async(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+            elif base_request.method == self._method_command:
+                raw_result = await self._codex_client.session_command(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+                item = _as_a2a_message(session_id, _message_to_item(raw_result))
+                if item is None:
+                    raise RuntimeError(
+                        "Codex session command response could not be mapped to A2A Message"
+                    )
+                result = {"item": item}
+            else:
+                raw_result = await self._codex_client.session_shell(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+                item = _as_a2a_message(session_id, raw_result)
+                if item is None:
+                    raise RuntimeError(
+                        "Codex session shell response could not be mapped to A2A Message"
+                    )
+                result = {"item": item}
+
+            if (
+                pending_claim
+                and isinstance(identity, str)
+                and self._session_claim_finalize is not None
+            ):
+                await self._session_claim_finalize(identity=identity, session_id=session_id)
+                claim_finalized = True
+        except PermissionError:
+            return self._session_forbidden_response(base_request.id, session_id=session_id)
+        except httpx.HTTPStatusError as exc:
+            upstream_status = exc.response.status_code
+            if upstream_status == 404:
+                return self._generate_error_response(
+                    base_request.id,
+                    JSONRPCError(
+                        code=ERR_SESSION_NOT_FOUND,
+                        message="Session not found",
+                        data={"type": "SESSION_NOT_FOUND", "session_id": session_id},
+                    ),
+                )
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_UPSTREAM_HTTP_ERROR,
+                    message="Upstream Codex error",
+                    data={
+                        "type": "UPSTREAM_HTTP_ERROR",
+                        "upstream_status": upstream_status,
+                        "session_id": session_id,
+                    },
+                ),
+            )
+        except httpx.HTTPError:
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_UPSTREAM_UNREACHABLE,
+                    message="Upstream Codex unreachable",
+                    data={"type": "UPSTREAM_UNREACHABLE", "session_id": session_id},
+                ),
+            )
+        except Exception as exc:
+            logger.exception("Codex session control JSON-RPC method failed")
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(root=InternalError(message=str(exc))),
+            )
+        finally:
+            if (
+                pending_claim
+                and not claim_finalized
+                and isinstance(identity, str)
+                and self._session_claim_release is not None
+            ):
+                await self._session_claim_release(identity=identity, session_id=session_id)
+
+        if base_request.id is None:
+            return Response(status_code=204)
+
+        return self._jsonrpc_success_response(base_request.id, result)
 
     async def _handle_interrupt_callback_request(
         self,
