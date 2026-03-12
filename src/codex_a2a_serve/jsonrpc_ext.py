@@ -203,7 +203,10 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
         context_id=session_id,
         # Model Codex sessions as completed A2A Tasks for stable downstream rendering.
         status=TaskStatus(state=TaskState.completed),
-        metadata={"codex": {"raw": session, "title": title}},
+        metadata={
+            "shared": {"session": {"id": session_id, "title": title}},
+            "codex": {"raw": session},
+        },
     )
     return task.model_dump(by_alias=True, exclude_none=True)
 
@@ -234,7 +237,10 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
         role=role,
         parts=[TextPart(text=text)],
         context_id=session_id,
-        metadata={"codex": {"raw": item, "session_id": session_id}},
+        metadata={
+            "shared": {"session": {"id": session_id}},
+            "codex": {"raw": item},
+        },
     )
     return msg.model_dump(by_alias=True, exclude_none=True)
 
@@ -562,6 +568,22 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     )
                 ),
             )
+        unknown_metadata_fields = sorted(set(metadata) - {"codex"})
+        if unknown_metadata_fields:
+            return None, self._generate_error_response(
+                request_id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=(
+                            f"Unsupported metadata fields: {', '.join(unknown_metadata_fields)}"
+                        ),
+                        data={
+                            "type": "INVALID_FIELD",
+                            "fields": [f"metadata.{field}" for field in unknown_metadata_fields],
+                        },
+                    )
+                ),
+            )
         raw_codex_metadata = metadata.get("codex")
         if raw_codex_metadata is None:
             return None, None
@@ -790,23 +812,18 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 ),
             )
         request_id = request_id.strip()
-        directory = params.get("directory")
-        if directory is not None and not isinstance(directory, str):
-            return self._generate_error_response(
-                base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="directory must be a string",
-                        data={"type": "INVALID_FIELD", "field": "directory"},
-                    )
-                ),
-            )
+        directory, metadata_error = self._extract_directory_from_metadata(
+            request_id=base_request.id,
+            params=params,
+        )
+        if metadata_error is not None:
+            return metadata_error
         if base_request.method == self._method_reply_permission:
-            allowed_fields = {"request_id", "reply", "message", "directory"}
+            allowed_fields = {"request_id", "reply", "message", "metadata"}
         elif base_request.method == self._method_reply_question:
-            allowed_fields = {"request_id", "answers", "directory"}
+            allowed_fields = {"request_id", "answers", "metadata"}
         else:
-            allowed_fields = {"request_id", "directory"}
+            allowed_fields = {"request_id", "metadata"}
         unknown_fields = sorted(set(params) - allowed_fields)
         if unknown_fields:
             return self._generate_error_response(

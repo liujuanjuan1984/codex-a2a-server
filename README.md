@@ -46,14 +46,14 @@ Additional notes:
   closes with `TaskStatusUpdateEvent(final=true)`. For detailed streaming
   contract and event semantics, see `docs/guide.md`.
 - Token usage passthrough: normalized usage/cost stats are exposed at
-  `metadata.codex.usage` (stream final status and non-streaming task metadata).
+  `metadata.shared.usage` (stream final status and non-streaming task metadata).
 - Interrupt callback passthrough: when Codex emits `permission.asked` /
-  `question.asked`, stream status events include `metadata.codex.interrupt`
-  so downstream can reply via JSON-RPC extension methods.
+  `question.asked`, stream status events include `metadata.shared.interrupt`
+  while provider-private raw details remain under `metadata.codex.interrupt`.
 - Re-subscribe after disconnect: `GET /v1/tasks/{task_id}:subscribe`
   (available while the task is not in a terminal state).
 - Session continuation contract: clients can explicitly bind to an existing
-  Codex session via `metadata.codex_session_id`.
+  Codex session via `metadata.shared.session.id`.
 - Codex session query extension (JSON-RPC):
   `codex.sessions.list` / `codex.sessions.messages.list`.
 
@@ -112,8 +112,9 @@ For full configuration, see `docs/guide.md`. Most commonly used options:
 - `CODEX_APP_SERVER_LISTEN`: Codex app-server transport (default: `stdio://`)
 - `CODEX_MODEL`: default model for `thread/start` (default: `gpt-5.1-codex`)
 - `CODEX_MODEL_ID`: optional per-turn model override for `turn/start`
-- `CODEX_DIRECTORY`: default `cwd` (optional). Clients may pass `metadata.directory`
-  only when `A2A_ALLOW_DIRECTORY_OVERRIDE=true` and the path stays inside the allowed workspace.
+- `CODEX_DIRECTORY`: default `cwd` (optional). Clients may pass
+  `metadata.codex.directory` only when `A2A_ALLOW_DIRECTORY_OVERRIDE=true`
+  and the path stays inside the allowed workspace.
 - `CODEX_TIMEOUT_STREAM`: optional timeout for streaming send path.
   Unset means no explicit stream timeout (the turn waits until completion).
 - `A2A_BEARER_TOKEN`: required bearer token for authentication
@@ -130,7 +131,7 @@ Compatibility note:
 
 To continue an existing Codex conversation, pass this metadata key on every invoke request:
 
-- `metadata.codex_session_id`: target Codex session ID (for example
+- `metadata.shared.session.id`: target Codex session ID (for example
   `ses_xxx`)
 
 Server behavior:
@@ -152,7 +153,11 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
       "content": [{"text": "Continue our previous conversation and summarize the last conclusion."}]
     },
     "metadata": {
-      "codex_session_id": "<session_id>"
+      "shared": {
+        "session": {
+          "id": "<session_id>"
+        }
+      }
     }
   }'
 ```
@@ -164,11 +169,12 @@ The service exposes Codex session list/history queries through A2A extension met
 - Auth: same `Authorization: Bearer <token>`
 - Result: `result.items` always contains A2A standard objects
   (Task for session list, Message for history)
+- Shared session metadata is exposed at `metadata.shared.session`
 - Codex raw records are preserved in `metadata.codex.raw`
 - Interrupt callback methods:
-  - `codex.permission.reply`
-  - `codex.question.reply`
-  - `codex.question.reject`
+  - `a2a.interrupt.permission.reply`
+  - `a2a.interrupt.question.reply`
+  - `a2a.interrupt.question.reject`
 
 List sessions (`codex.sessions.list`):
 

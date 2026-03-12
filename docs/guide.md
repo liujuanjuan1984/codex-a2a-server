@@ -63,27 +63,29 @@ Compatibility note:
 - Streaming (`/v1/message:stream`) emits incremental
   `TaskArtifactUpdateEvent` and then
   `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
-  `artifact.metadata.codex.block_type` with values
+  `artifact.metadata.shared.stream.block_type` with values
   `text` / `reasoning` / `tool_call`. All chunks share one stream
   artifact ID and preserve original timeline via
-  `artifact.metadata.codex.sequence`. Events without
-  `message_id` are dropped. A final snapshot is only emitted when stream
-  chunks did not already produce the same final text.
+  `artifact.metadata.shared.stream.sequence`. Timeline identity fields such as
+  `message_id`, `event_id`, and `source` are emitted under
+  `metadata.shared.stream`. A final snapshot is only emitted when stream chunks
+  did not already produce the same final text.
   Stream routing is schema-first: the service classifies chunks primarily by
   Codex `part.type` (plus `part_id` state) rather than inline text markers.
   `message.part.delta` and `message.part.updated` are merged per `part_id`;
   out-of-order deltas are buffered and replayed when the corresponding
   `part.updated` arrives. Structured `tool` parts are emitted as `tool_call`
   blocks with normalized state payload. Final status event metadata may include
-  normalized token usage at `metadata.codex.usage` with fields like
+  normalized token usage at `metadata.shared.usage` with fields like
   `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
   Interrupt events (`permission.asked` / `question.asked`) are mapped to
   `TaskStatusUpdateEvent(final=false, state=input-required)` with details at
-  `metadata.codex.interrupt` (including `request_id`, event type, and
-  structured payload for downstream callback handling).
+  `metadata.shared.interrupt` (including `request_id`, interrupt type, and
+  shared payload for downstream callback handling). Provider-private raw
+  interrupt payload is preserved under `metadata.codex.interrupt`.
   Non-streaming requests return a `Task` directly.
 - Non-streaming `message:send` responses may include normalized token usage at
-  `Task.metadata.codex.usage` with the same field schema.
+  `Task.metadata.shared.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
 - Within one `codex-a2a-serve` instance, all consumers share the same
@@ -95,7 +97,7 @@ Compatibility note:
     via `event_queue`.
   - Failure events include concrete error details with `failed` state.
 - Directory validation and normalization:
-  - Clients can pass `metadata.directory`, but it must stay inside
+  - Clients can pass `metadata.codex.directory`, but it must stay inside
     `${CODEX_DIRECTORY}` (or service runtime root if not configured).
   - All paths are normalized with `realpath` to prevent `..` or symlink
     boundary bypass.
@@ -110,7 +112,7 @@ Compatibility note:
 
 To continue a historical Codex session, include this metadata key in each invoke request:
 
-- `metadata.codex_session_id`: target Codex session ID
+- `metadata.shared.session.id`: target Codex session ID
 
 Server behavior:
 
@@ -131,7 +133,11 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
       "content": [{"text": "Continue the previous session and restate the key conclusion."}]
     },
     "metadata": {
-      "codex_session_id": "<session_id>"
+      "shared": {
+        "session": {
+          "id": "<session_id>"
+        }
+      }
     }
   }'
 ```
@@ -150,8 +156,9 @@ This service exposes Codex session list and message-history queries via A2A JSON
   - `result.items` is always an array of A2A standard objects
   - session list => `Task` with `status.state=completed`
   - message history => `Message`
+  - canonical session metadata is exposed at `metadata.shared.session`
   - raw upstream payload is preserved at `metadata.codex.raw`
-  - session title is available at `metadata.codex.title`
+  - session title is available at `metadata.shared.session.title`
 
 ### Session List (`codex.sessions.list`)
 
@@ -186,17 +193,17 @@ curl -sS http://127.0.0.1:8000/ \
 
 ## Codex Interrupt Callback (A2A Extension)
 
-When stream metadata reports an interrupt request at `metadata.codex.interrupt`,
+When stream metadata reports an interrupt request at `metadata.shared.interrupt`,
 clients can reply through JSON-RPC extension methods:
 
-- `codex.permission.reply`
+- `a2a.interrupt.permission.reply`
   - required: `request_id`
   - required: `reply` (`once` / `always` / `reject`)
   - optional: `message`
-- `codex.question.reply`
+- `a2a.interrupt.question.reply`
   - required: `request_id`
   - required: `answers` (`Array<Array<string>>`)
-- `codex.question.reject`
+- `a2a.interrupt.question.reject`
   - required: `request_id`
 
 Permission reply example:
@@ -208,7 +215,7 @@ curl -sS http://127.0.0.1:8000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": 3,
-    "method": "codex.permission.reply",
+    "method": "a2a.interrupt.permission.reply",
     "params": {
       "request_id": "<request_id>",
       "reply": "once"

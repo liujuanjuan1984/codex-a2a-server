@@ -29,6 +29,7 @@ from a2a.types import (
 )
 
 from .codex_client import OpencodeClient
+from .extension_contracts import SHARED_METADATA_NAMESPACE
 
 logger = logging.getLogger(__name__)
 
@@ -309,10 +310,9 @@ class OpencodeAgentExecutor(AgentExecutor):
 
         streaming_request = self._should_stream(context)
         user_text = context.get_user_input().strip()
-        bound_session_id = _extract_codex_session_id(context)
+        bound_session_id = _extract_shared_session_id(context)
 
         # Directory validation
-        requested_dir = None
         metadata = context.metadata
         if metadata is not None and not isinstance(metadata, Mapping):
             await self._emit_error(
@@ -323,8 +323,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 streaming_request=streaming_request,
             )
             return
-        if isinstance(metadata, Mapping):
-            requested_dir = metadata.get("directory")
+        requested_dir = _extract_codex_directory(context)
 
         try:
             directory = self._resolve_and_validate_directory(requested_dir)
@@ -467,18 +466,15 @@ class OpencodeAgentExecutor(AgentExecutor):
                             state=TaskState.input_required,
                         ),
                         final=True,
-                        metadata={
-                            "codex": {
-                                "session_id": response.session_id,
+                        metadata=_build_output_metadata(
+                            session_id=response.session_id,
+                            usage=resolved_token_usage,
+                            stream={
                                 "message_id": resolved_message_id,
                                 "event_id": f"{stream_state.event_id_namespace}:status",
-                                **(
-                                    {"usage": resolved_token_usage}
-                                    if resolved_token_usage is not None
-                                    else {}
-                                ),
-                            }
-                        },
+                                "source": "status",
+                            },
+                        ),
                     )
                 )
             else:
@@ -501,17 +497,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     status=TaskStatus(state=TaskState.input_required),
                     history=history,
                     artifacts=[artifact],
-                    metadata={
-                        "codex": {
-                            "session_id": response.session_id,
-                            "message_id": resolved_message_id,
-                            **(
-                                {"usage": resolved_token_usage}
-                                if resolved_token_usage is not None
-                                else {}
-                            ),
-                        }
-                    },
+                    metadata=_build_output_metadata(
+                        session_id=response.session_id,
+                        usage=resolved_token_usage,
+                    ),
                 )
                 # Attach the assistant message as the current status message.
                 task.status.message = assistant_message
@@ -862,8 +851,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: TaskState,
             request_id: str,
             interrupt_type: str,
-            event_type: str,
             details: Mapping[str, Any],
+            codex_private: Mapping[str, Any] | None = None,
         ) -> None:
             sequence = stream_state.next_sequence()
             await event_queue.enqueue_event(
@@ -872,19 +861,23 @@ class OpencodeAgentExecutor(AgentExecutor):
                     context_id=context_id,
                     status=TaskStatus(state=state),
                     final=False,
-                    metadata={
-                        "codex": {
-                            "session_id": session_id,
+                    metadata=_build_output_metadata(
+                        session_id=session_id,
+                        stream={
                             "message_id": stream_state.resolve_message_id(None),
                             "event_id": stream_state.build_event_id(sequence),
-                            "interrupt": {
-                                "request_id": request_id,
-                                "type": interrupt_type,
-                                "event_type": event_type,
-                                "details": dict(details),
-                            },
-                        }
-                    },
+                            "source": "interrupt",
+                            "sequence": sequence,
+                        },
+                        interrupt={
+                            "request_id": request_id,
+                            "type": interrupt_type,
+                            "details": dict(details),
+                        },
+                        codex_private=(
+                            {"interrupt": dict(codex_private)} if codex_private else None
+                        ),
+                    ),
                 )
             )
 
@@ -1050,8 +1043,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                                         state=TaskState.input_required,
                                         request_id=request_id,
                                         interrupt_type=asked["interrupt_type"],
-                                        event_type=event_type,
                                         details=asked["details"],
+                                        codex_private=asked.get("codex_private"),
                                     )
                             resolved = _extract_interrupt_resolved_event(event)
                             if resolved is not None:
@@ -1221,19 +1214,49 @@ def _build_stream_artifact_metadata(
     sequence: int | None = None,
     event_id: str | None = None,
 ) -> dict[str, Any]:
-    codex_meta: dict[str, Any] = {
-        "block_type": block_type,
+    stream_meta: dict[str, Any] = {
+        "block_type": block_type.value,
         "source": source,
     }
     if message_id:
-        codex_meta["message_id"] = message_id
+        stream_meta["message_id"] = message_id
     if role:
-        codex_meta["role"] = role
+        stream_meta["role"] = role
     if sequence is not None:
-        codex_meta["sequence"] = sequence
+        stream_meta["sequence"] = sequence
     if event_id:
-        codex_meta["event_id"] = event_id
-    return {"codex": codex_meta}
+        stream_meta["event_id"] = event_id
+    return {"shared": {"stream": stream_meta}}
+
+
+def _build_output_metadata(
+    *,
+    session_id: str | None = None,
+    session_title: str | None = None,
+    usage: Mapping[str, Any] | None = None,
+    stream: Mapping[str, Any] | None = None,
+    interrupt: Mapping[str, Any] | None = None,
+    codex_private: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    metadata: dict[str, Any] = {}
+    shared_meta: dict[str, Any] = {}
+
+    if session_id:
+        session_meta: dict[str, Any] = {"id": session_id}
+        if session_title is not None:
+            session_meta["title"] = session_title
+        shared_meta["session"] = session_meta
+    if usage is not None:
+        shared_meta["usage"] = dict(usage)
+    if stream is not None:
+        shared_meta["stream"] = dict(stream)
+    if interrupt is not None:
+        shared_meta["interrupt"] = dict(interrupt)
+    if shared_meta:
+        metadata[SHARED_METADATA_NAMESPACE] = shared_meta
+    if codex_private:
+        metadata["codex"] = dict(codex_private)
+    return metadata or None
 
 
 def _coerce_number(value: Any) -> int | float | None:
@@ -1467,27 +1490,30 @@ def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] |
             "permission": props.get("permission"),
             "patterns": _extract_string_list(props.get("patterns")),
             "always": _extract_string_list(props.get("always")),
-            "metadata": dict(props.get("metadata"))
-            if isinstance(props.get("metadata"), Mapping)
-            else {},
         }
+        codex_private: dict[str, Any] = {}
+        if isinstance(props.get("metadata"), Mapping):
+            codex_private["metadata"] = dict(props.get("metadata"))
         tool = props.get("tool")
         if isinstance(tool, Mapping):
-            details["tool"] = dict(tool)
+            codex_private["tool"] = dict(tool)
         return {
             "request_id": request_id,
             "interrupt_type": "permission",
             "details": details,
+            "codex_private": codex_private,
         }
     questions = props.get("questions")
     details = {"questions": questions if isinstance(questions, list) else []}
+    codex_private = {}
     tool = props.get("tool")
     if isinstance(tool, Mapping):
-        details["tool"] = dict(tool)
+        codex_private["tool"] = dict(tool)
     return {
         "request_id": request_id,
         "interrupt_type": "question",
         "details": details,
+        "codex_private": codex_private,
     }
 
 
@@ -1650,23 +1676,53 @@ def _build_history(context: RequestContext) -> list[Message]:
     return history
 
 
-def _extract_codex_session_id(context: RequestContext) -> str | None:
-    # Contract: clients may pass the binding at either request-level metadata
-    # (MessageSendParams.metadata) or message-level metadata (Message.metadata).
-    candidate = None
+def _extract_namespaced_string_metadata(
+    context: RequestContext,
+    *,
+    namespace: str,
+    path: tuple[str, ...],
+) -> str | None:
+    candidates: list[Mapping[str, Any]] = []
     try:
         meta = context.metadata
         if isinstance(meta, Mapping):
-            candidate = meta.get("codex_session_id")
+            candidates.append(meta)
     except Exception:
-        candidate = None
+        pass
 
-    if not candidate and context.message is not None:
+    if context.message is not None:
         msg_meta = getattr(context.message, "metadata", None) or {}
         if isinstance(msg_meta, Mapping):
-            candidate = msg_meta.get("codex_session_id")
+            candidates.append(msg_meta)
 
-    if isinstance(candidate, str):
-        value = candidate.strip()
-        return value or None
+    for candidate in candidates:
+        current = candidate.get(namespace)
+        for part in path[:-1]:
+            if not isinstance(current, Mapping):
+                current = None
+                break
+            current = current.get(part)
+        if not isinstance(current, Mapping):
+            continue
+        value = current.get(path[-1])
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
     return None
+
+
+def _extract_shared_session_id(context: RequestContext) -> str | None:
+    return _extract_namespaced_string_metadata(
+        context,
+        namespace=SHARED_METADATA_NAMESPACE,
+        path=("session", "id"),
+    )
+
+
+def _extract_codex_directory(context: RequestContext) -> str | None:
+    return _extract_namespaced_string_metadata(
+        context,
+        namespace="codex",
+        path=("directory",),
+    )

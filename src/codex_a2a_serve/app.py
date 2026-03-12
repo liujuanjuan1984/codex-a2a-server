@@ -36,11 +36,11 @@ from .extension_contracts import (
     SESSION_CONTROL_METHODS,
     SESSION_QUERY_METHODS,
     build_interrupt_callback_extension_params,
+    build_session_binding_extension_params,
     build_session_query_extension_params,
+    build_streaming_extension_params,
 )
-from .jsonrpc_ext import (
-    OpencodeSessionQueryJSONRPCApplication,
-)
+from .jsonrpc_ext import OpencodeSessionQueryJSONRPCApplication
 from .request_handler import OpencodeRequestHandler
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,10 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
 
-SESSION_BINDING_EXTENSION_URI = "urn:codex-a2a:codex-session-binding/v1"
+SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
+STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:codex-a2a:codex-session-query/v1"
-INTERRUPT_CALLBACK_EXTENSION_URI = "urn:codex-a2a:codex-interrupt-callback/v1"
+INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
 
 class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
@@ -105,8 +106,8 @@ def _build_agent_card_description(
         "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), "
-        "Codex session-query extensions, and interrupt callback extensions "
-        "(permission/question reply)."
+        "shared session-binding and streaming contracts, Codex session-query "
+        "extensions, and shared interrupt callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -140,6 +141,17 @@ def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
     deployment_context = _build_deployment_context(settings)
+    session_binding_extension_params = build_session_binding_extension_params(
+        deployment_context=deployment_context,
+        directory_override_enabled=settings.a2a_allow_directory_override,
+    )
+    streaming_extension_params = build_streaming_extension_params()
+    session_query_extension_params = build_session_query_extension_params(
+        deployment_context=deployment_context
+    )
+    interrupt_callback_extension_params = build_interrupt_callback_extension_params(
+        deployment_context=deployment_context
+    )
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
             root=HTTPAuthSecurityScheme(
@@ -184,31 +196,22 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     uri=SESSION_BINDING_EXTENSION_URI,
                     required=False,
                     description=(
-                        "Contract to bind A2A messages to an existing Codex session "
+                        "Shared contract to bind A2A messages to an existing Codex session "
                         "when continuing a previous chat. Clients should pass "
-                        "metadata.codex_session_id. The metadata.directory field is also "
-                        "supported under server-side directory boundary validation."
+                        "metadata.shared.session.id. The metadata.codex.directory field "
+                        "remains available as a Codex-private override under "
+                        "server-side directory boundary validation."
                     ),
-                    params={
-                        "metadata_key": "codex_session_id",
-                        "behavior": "prefer_metadata_binding_else_create_session",
-                        "supported_metadata": ["codex_session_id", "directory"],
-                        "directory_override_enabled": settings.a2a_allow_directory_override,
-                        "shared_workspace_across_consumers": True,
-                        "tenant_isolation": "none",
-                        "deployment_context": deployment_context,
-                        "notes": [
-                            (
-                                "If metadata.codex_session_id is provided, the server will "
-                                "send the message to that Codex session_id."
-                            ),
-                            (
-                                "Otherwise, the server will create a new Codex session and "
-                                "cache the (identity, contextId)->session_id mapping in memory "
-                                "with TTL."
-                            ),
-                        ],
-                    },
+                    params=session_binding_extension_params,
+                ),
+                AgentExtension(
+                    uri=STREAMING_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Shared streaming metadata contract for canonical block hints, "
+                        "timeline identity, usage, and interactive interrupt metadata."
+                    ),
+                    params=streaming_extension_params,
                 ),
                 AgentExtension(
                     uri=SESSION_QUERY_EXTENSION_URI,
@@ -217,20 +220,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "Support Codex session list/history queries via custom JSON-RPC methods "
                         "on the agent's A2A JSON-RPC interface."
                     ),
-                    params=build_session_query_extension_params(
-                        deployment_context=deployment_context
-                    ),
+                    params=session_query_extension_params,
                 ),
                 AgentExtension(
                     uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                     required=False,
                     description=(
-                        "Handle interactive interrupt callbacks generated by Codex "
-                        "(permission/question asked events) through JSON-RPC methods."
+                        "Handle interactive interrupt callbacks generated during "
+                        "streaming through shared JSON-RPC methods."
                     ),
-                    params=build_interrupt_callback_extension_params(
-                        deployment_context=deployment_context
-                    ),
+                    params=interrupt_callback_extension_params,
                 ),
             ],
         ),
@@ -263,10 +262,10 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 name="Codex Interrupt Callback",
                 description=(
                     "Reply permission/question interrupts emitted during streaming via "
-                    "JSON-RPC methods codex.permission.reply, "
-                    "codex.question.reply, and codex.question.reject."
+                    "JSON-RPC methods a2a.interrupt.permission.reply, "
+                    "a2a.interrupt.question.reply, and a2a.interrupt.question.reject."
                 ),
-                tags=["codex", "interrupt", "permission", "question"],
+                tags=["codex", "interrupt", "permission", "question", "shared"],
                 examples=[
                     "Reply once/always/reject to a permission request by request_id.",
                     "Submit answers for a question request by request_id.",

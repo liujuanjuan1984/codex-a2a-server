@@ -2,6 +2,7 @@ from codex_a2a_serve.app import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
     build_agent_card,
 )
 from tests.helpers import make_settings
@@ -41,20 +42,40 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert context["variant"] == "safe"
     assert context["allow_directory_override"] is False
     assert context["shared_workspace_across_consumers"] is True
+    assert binding.params["metadata_field"] == "metadata.shared.session.id"
+    assert binding.params["supported_metadata"] == [
+        "shared.session.id",
+        "codex.directory",
+    ]
+    assert binding.params["provider_private_metadata"] == ["codex.directory"]
     assert binding.params["directory_override_enabled"] is False
     assert binding.params["shared_workspace_across_consumers"] is True
     assert binding.params["tenant_isolation"] == "none"
+
+    streaming = ext_by_uri[STREAMING_EXTENSION_URI]
+    assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
+    assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
+    assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
+    assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     assert session_query.params["deployment_context"]["project"] == "alpha"
     assert session_query.params["shared_workspace_across_consumers"] is True
     assert session_query.params["tenant_isolation"] == "none"
     assert session_query.params["supported_metadata"] == ["codex.directory"]
+    assert session_query.params["provider_private_metadata"] == ["codex.directory"]
+    assert (
+        session_query.params["context_semantics"]["upstream_session_id_field"]
+        == "metadata.shared.session.id"
+    )
 
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["deployment_context"]["project"] == "alpha"
     assert interrupt.params["shared_workspace_across_consumers"] is True
     assert interrupt.params["tenant_isolation"] == "none"
+    assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
+    assert interrupt.params["supported_metadata"] == ["codex.directory"]
+    assert interrupt.params["provider_private_metadata"] == ["codex.directory"]
 
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:

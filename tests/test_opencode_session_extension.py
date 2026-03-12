@@ -75,8 +75,9 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         session = payload["result"]["items"][0]
         assert session["id"] == "s-1"
         assert session["contextId"] == "s-1"
+        assert session["metadata"]["shared"]["session"]["id"] == "s-1"
+        assert session["metadata"]["shared"]["session"]["title"] == "Session s-1"
         assert session["metadata"]["codex"]["raw"]["id"] == "s-1"
-        assert session["metadata"]["codex"]["title"] == "Session s-1"
         assert dummy.last_sessions_params is not None
         assert dummy.last_sessions_params.get("limit") == 10
 
@@ -98,7 +99,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         message = payload["result"]["items"][0]
         assert message["contextId"] == "s-1"
         assert message["parts"][0]["text"] == "SECRET_HISTORY"
-        assert message["metadata"]["codex"]["session_id"] == "s-1"
+        assert message["metadata"]["shared"]["session"]["id"] == "s-1"
         assert dummy.last_messages_params is not None
         assert dummy.last_messages_params.get("limit") == 5
 
@@ -161,7 +162,7 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
         payload = resp.json()
         session = payload["result"]["items"][0]
         assert session["id"] == "s-1"
-        assert session["metadata"]["codex"]["title"] == "My Session"
+        assert session["metadata"]["shared"]["session"]["title"] == "My Session"
 
 
 @pytest.mark.asyncio
@@ -738,12 +739,12 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
             json={
                 "jsonrpc": "2.0",
                 "id": 11,
-                "method": "codex.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {
                     "request_id": "perm-1",
                     "reply": "once",
                     "message": "approved by operator",
-                    "directory": "/workspace",
+                    "metadata": {"codex": {"directory": "/workspace"}},
                 },
             },
         )
@@ -779,7 +780,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
             json={
                 "jsonrpc": "2.0",
                 "id": 111,
-                "method": "codex.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"requestID": "perm-legacy", "decision": "allow"},
             },
         )
@@ -835,7 +836,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             json={
                 "jsonrpc": "2.0",
                 "id": 12,
-                "method": "codex.question.reply",
+                "method": "a2a.interrupt.question.reply",
                 "params": {"request_id": "q-1", "answers": [["A"], ["B"]]},
             },
         )
@@ -850,7 +851,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             json={
                 "jsonrpc": "2.0",
                 "id": 13,
-                "method": "codex.question.reject",
+                "method": "a2a.interrupt.question.reject",
                 "params": {"request_id": "q-2"},
             },
         )
@@ -891,7 +892,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
             json={
                 "jsonrpc": "2.0",
                 "id": 14,
-                "method": "codex.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "perm-404", "reply": "reject"},
             },
         )
