@@ -13,6 +13,8 @@ Executable scripts live here. This file is the primary script-entry guide.
   bootstrap host prerequisites for systemd deployment.
 - [`scripts/deploy.sh`](./deploy.sh):
   create/update one long-running systemd instance.
+- [`scripts/deploy_light.sh`](./deploy_light.sh):
+  lightweight background runner on current user (no system user/workspace setup).
 - [`scripts/start_services.sh`](./start_services.sh):
   local foreground runner without systemd.
 - [`scripts/uninstall.sh`](./uninstall.sh):
@@ -22,6 +24,7 @@ Executable scripts live here. This file is the primary script-entry guide.
 
 - [`scripts/init_system.sh`](./init_system.sh)
 - [`scripts/deploy.sh`](./deploy.sh)
+- [`scripts/deploy_light.sh`](./deploy_light.sh)
 - [`scripts/start_services.sh`](./start_services.sh)
 - [`scripts/uninstall.sh`](./uninstall.sh)
 
