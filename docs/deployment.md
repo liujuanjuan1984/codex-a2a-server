@@ -111,11 +111,6 @@ GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERS
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
-```bash
-GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
-```
-
 HTTPS public URL example:
 
 ```bash
