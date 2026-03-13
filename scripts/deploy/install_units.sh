@@ -34,7 +34,7 @@ EnvironmentFile=-${DATA_ROOT}/%i/config/codex.auth.env
 EnvironmentFile=-${DATA_ROOT}/%i/config/codex.secret.env
 Environment=HOME=${DATA_ROOT}/%i
 
-ExecStart=${OPENCODE_A2A_DIR}/scripts/deploy/run_opencode.sh
+ExecStart=${OPENCODE_A2A_DIR}/scripts/deploy/run_codex.sh
 Restart=on-failure
 RestartSec=2
 UMask=0077

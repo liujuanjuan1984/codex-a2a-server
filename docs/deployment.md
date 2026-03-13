@@ -222,7 +222,7 @@ Notes:
 This section describes what this repository's deploy scripts currently cover.
 It is not a full Codex provider capability matrix.
 
-| Provider | Secret key persisted by deploy scripts | Example in this doc | Startup key enforcement in `run_opencode.sh` |
+| Provider | Secret key persisted by deploy scripts | Example in this doc | Startup key enforcement in `run_codex.sh` |
 | --- | --- | --- | --- |
 | Google / Gemini | `GOOGLE_GENERATIVE_AI_API_KEY` | Yes | Yes (explicitly required for `provider=google` or `model=*gemini*`) |
 | OpenAI | `OPENAI_API_KEY` | Yes | No explicit provider-specific check |
