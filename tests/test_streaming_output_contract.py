@@ -832,6 +832,124 @@ async def test_streaming_emits_non_json_tool_output_delta_payloads_as_data_parts
 
 
 @pytest.mark.asyncio
+async def test_streaming_preserves_repeated_identical_tool_output_deltas() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-repeat", context_id="ctx-tool-repeat", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 3
+    assert [_part_data(event)["output_delta"] for event in tool_updates] == [".", ".", "."]
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_file_change_output_delta_payloads_as_data_parts() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-file-change",
+                call_id="call-file-1",
+                tool="apply_patch",
+                source_method="fileChange",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "fileChange",
+                    "call_id": "call-file-1",
+                    "tool": "apply_patch",
+                    "output_delta": "Updated src/app.py\n",
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-file-change", context_id="ctx-file-change", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 1
+    assert _part_data(tool_updates[0]) == {
+        "kind": "output_delta",
+        "source_method": "fileChange",
+        "call_id": "call-file-1",
+        "tool": "apply_patch",
+        "output_delta": "Updated src/app.py\n",
+    }
+
+
+@pytest.mark.asyncio
 async def test_streaming_flushes_partial_marker_on_eof_as_current_block_type() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[

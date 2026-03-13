@@ -76,6 +76,8 @@ class StreamPartState:
     role: str | None
     buffer: str = ""
     saw_delta: bool = False
+    tool_chunk_count: int = 0
+    last_tool_state_payload: str | None = None
 
 
 @dataclass
@@ -529,16 +531,17 @@ async def consume_codex_stream(
         tool_chunk = serialize_tool_payload(payload)
         if message_id:
             state.message_id = message_id
-        previous = state.buffer
-        if tool_chunk == previous:
+        if tool_chunk == state.last_tool_state_payload:
             return []
-        state.buffer = tool_chunk
-        content_key = tool_chunk if not previous else f"\n{tool_chunk}"
+        append = state.tool_chunk_count > 0
+        state.tool_chunk_count += 1
+        state.last_tool_state_payload = tool_chunk
+        content_key = tool_chunk if not append else f"\n{tool_chunk}"
         return [
             new_chunk(
                 part=DataPart(data=payload),
                 content_key=content_key,
-                append=bool(previous),
+                append=append,
                 block_type=state.block_type,
                 source="tool_part_update",
                 message_id=state.message_id,
@@ -568,16 +571,18 @@ async def consume_codex_stream(
         tool_chunk = serialize_tool_payload(payload)
         if message_id:
             state.message_id = message_id
-        previous = state.buffer
-        if tool_chunk == previous:
+        if payload.get("kind") == "state" and tool_chunk == state.last_tool_state_payload:
             return []
-        state.buffer = tool_chunk
-        content_key = tool_chunk if not previous else f"\n{tool_chunk}"
+        append = state.tool_chunk_count > 0
+        state.tool_chunk_count += 1
+        if payload.get("kind") == "state":
+            state.last_tool_state_payload = tool_chunk
+        content_key = tool_chunk if not append else f"\n{tool_chunk}"
         return [
             new_chunk(
                 part=DataPart(data=payload),
                 content_key=content_key,
-                append=bool(previous),
+                append=append,
                 block_type=state.block_type,
                 source=source,
                 message_id=state.message_id,
