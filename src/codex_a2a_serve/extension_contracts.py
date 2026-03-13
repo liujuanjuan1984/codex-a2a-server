@@ -270,6 +270,8 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "interrupt_fields": {
             "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
             "type": f"{SHARED_INTERRUPT_METADATA_FIELD}.type",
+            "phase": f"{SHARED_INTERRUPT_METADATA_FIELD}.phase",
+            "resolution": f"{SHARED_INTERRUPT_METADATA_FIELD}.resolution",
             "details": f"{SHARED_INTERRUPT_METADATA_FIELD}.details",
         },
         "usage_fields": {

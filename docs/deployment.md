@@ -417,6 +417,9 @@ Application-level safeguards:
 - `text` and `reasoning` stream chunks use `TextPart`; `tool_call` stream
   chunks use `DataPart` with normalized structured tool payload fields such as
   `tool`, `call_id`, `status`, `input`, `output`, and `error`
+- interrupt lifecycle is explicit in `metadata.shared.interrupt`:
+  asked events use `phase=asked`, resolved events use `phase=resolved`, and
+  resolved events may include `resolution=replied|rejected`
 - events without `message_id` are discarded to avoid ambiguous correlation
 - final snapshot is emitted only when stream chunks did not already produce
   the same final text; stream then closes with `TaskStatusUpdateEvent(final=true)`

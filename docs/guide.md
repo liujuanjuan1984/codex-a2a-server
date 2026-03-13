@@ -80,10 +80,15 @@ Compatibility note:
   `input`, `output`, `error`). Final status event metadata may include
   normalized token usage at `metadata.shared.usage` with fields like
   `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
-  Interrupt events (`permission.asked` / `question.asked`) are mapped to
-  `TaskStatusUpdateEvent(final=false, state=input-required)` with details at
-  `metadata.shared.interrupt` (including `request_id`, interrupt type, and
-  shared payload for downstream callback handling). Provider-private raw
+  Interrupt lifecycle is explicit: asked events (`permission.asked` /
+  `question.asked`) are mapped to
+  `TaskStatusUpdateEvent(final=false, state=input-required)` with
+  `metadata.shared.interrupt.phase=asked`; resolved events
+  (`permission.replied` / `question.replied` / `question.rejected`) are mapped
+  to `TaskStatusUpdateEvent(final=false, state=working)` with
+  `metadata.shared.interrupt.phase=resolved` and
+  `metadata.shared.interrupt.resolution=replied|rejected`. Duplicate or unknown
+  resolved events are suppressed by `request_id`. Provider-private raw
   interrupt payload is preserved under `metadata.codex.interrupt`.
   Non-streaming requests return a `Task` directly.
 - Non-streaming `message:send` responses may include normalized token usage at
@@ -197,6 +202,10 @@ curl -sS http://127.0.0.1:8000/ \
 
 When stream metadata reports an interrupt request at `metadata.shared.interrupt`,
 clients can reply through JSON-RPC extension methods:
+
+- asked lifecycle events expose `phase=asked`
+- resolved lifecycle events expose `phase=resolved`
+- resolved events may also expose `resolution=replied|rejected`
 
 - `a2a.interrupt.permission.reply`
   - required: `request_id`

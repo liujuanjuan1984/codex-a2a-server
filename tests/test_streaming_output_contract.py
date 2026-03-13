@@ -182,6 +182,26 @@ def _permission_asked_event(*, session_id: str, request_id: str) -> dict:
     }
 
 
+def _permission_replied_event(*, session_id: str, request_id: str) -> dict:
+    return {
+        "type": "permission.replied",
+        "properties": {
+            "id": request_id,
+            "sessionID": session_id,
+        },
+    }
+
+
+def _question_rejected_event(*, session_id: str, request_id: str) -> dict:
+    return {
+        "type": "question.rejected",
+        "properties": {
+            "id": request_id,
+            "sessionID": session_id,
+        },
+    }
+
+
 def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
     return [event for event in queue.events if isinstance(event, TaskArtifactUpdateEvent)]
 
@@ -466,6 +486,8 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     interrupt = _interrupt_meta(interrupt_statuses[0])
     assert interrupt["request_id"] == "perm-req-1"
     assert interrupt["details"]["permission"] == "read"
+    assert interrupt["phase"] == "asked"
+    assert "resolution" not in interrupt
     assert "/data/project/.env.secret" in interrupt["details"]["patterns"]
     assert "metadata" not in interrupt["details"]
     assert "tool" not in interrupt["details"]
@@ -474,6 +496,95 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
         == "/data/project/.env.secret"
     )
     assert interrupt_statuses[0].status.state == TaskState.input_required
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_interrupt_resolved_status_once_per_pending_request() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _permission_asked_event(session_id="ses-1", request_id="perm-req-2"),
+            _permission_replied_event(session_id="ses-1", request_id="perm-req-2"),
+            _permission_replied_event(session_id="ses-1", request_id="perm-req-2"),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-perm-resolved", context_id="ctx-perm-resolved", text="hi"
+        ),
+        queue,
+    )
+
+    interrupt_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("request_id")
+        == "perm-req-2"
+    ]
+    assert len(interrupt_statuses) == 2
+    asked = _interrupt_meta(interrupt_statuses[0])
+    resolved = _interrupt_meta(interrupt_statuses[1])
+    assert asked["phase"] == "asked"
+    assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert resolved["phase"] == "resolved"
+    assert resolved["resolution"] == "replied"
+    assert resolved["type"] == "permission"
+    assert resolved["details"] == {}
+    assert interrupt_statuses[1].status.state == TaskState.working
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_question_rejected_resolution_and_suppresses_unknown_resolved() -> (
+    None
+):
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _question_rejected_event(session_id="ses-1", request_id="q-unknown"),
+            {
+                "type": "question.asked",
+                "properties": {
+                    "id": "q-1",
+                    "sessionID": "ses-1",
+                    "questions": [{"id": "q1", "question": "Continue?"}],
+                },
+            },
+            _question_rejected_event(session_id="ses-1", request_id="q-1"),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-question-reject", context_id="ctx-question-reject", text="hi"
+        ),
+        queue,
+    )
+
+    question_interrupts = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type") == "question"
+    ]
+    assert len(question_interrupts) == 2
+    assert _interrupt_meta(question_interrupts[0])["phase"] == "asked"
+    resolved = _interrupt_meta(question_interrupts[1])
+    assert resolved["phase"] == "resolved"
+    assert resolved["resolution"] == "rejected"
+    assert resolved["request_id"] == "q-1"
+    assert all(_interrupt_meta(event)["request_id"] != "q-unknown" for event in question_interrupts)
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -494,8 +605,18 @@ def test_extract_interrupt_resolved_event_accepts_request_id_aliases() -> None:
     modern = _extract_interrupt_resolved_event(
         {"type": "permission.replied", "properties": {"id": "perm-2"}}
     )
-    assert legacy == {"request_id": "perm-1", "event_type": "permission.replied"}
-    assert modern == {"request_id": "perm-2", "event_type": "permission.replied"}
+    assert legacy == {
+        "request_id": "perm-1",
+        "event_type": "permission.replied",
+        "interrupt_type": "permission",
+        "resolution": "replied",
+    }
+    assert modern == {
+        "request_id": "perm-2",
+        "event_type": "permission.replied",
+        "interrupt_type": "permission",
+        "resolution": "replied",
+    }
 
 
 @pytest.mark.asyncio

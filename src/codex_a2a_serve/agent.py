@@ -152,8 +152,12 @@ class _StreamOutputState:
         self.pending_interrupt_request_ids.add(normalized)
         return True
 
-    def clear_interrupt_pending(self, request_id: str) -> None:
-        self.pending_interrupt_request_ids.discard(request_id.strip())
+    def clear_interrupt_pending(self, request_id: str) -> bool:
+        normalized = request_id.strip()
+        if not normalized or normalized not in self.pending_interrupt_request_ids:
+            return False
+        self.pending_interrupt_request_ids.discard(normalized)
+        return True
 
 
 class _TTLCache:
@@ -869,9 +873,19 @@ class OpencodeAgentExecutor(AgentExecutor):
             request_id: str,
             interrupt_type: str,
             details: Mapping[str, Any],
+            phase: str,
+            resolution: str | None = None,
             codex_private: Mapping[str, Any] | None = None,
         ) -> None:
             sequence = stream_state.next_sequence()
+            interrupt_payload: dict[str, Any] = {
+                "request_id": request_id,
+                "type": interrupt_type,
+                "phase": phase,
+                "details": dict(details),
+            }
+            if resolution is not None:
+                interrupt_payload["resolution"] = resolution
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
                     task_id=task_id,
@@ -886,11 +900,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                             "source": "interrupt",
                             "sequence": sequence,
                         },
-                        interrupt={
-                            "request_id": request_id,
-                            "type": interrupt_type,
-                            "details": dict(details),
-                        },
+                        interrupt=interrupt_payload,
                         codex_private=(
                             {"interrupt": dict(codex_private)} if codex_private else None
                         ),
@@ -1103,11 +1113,20 @@ class OpencodeAgentExecutor(AgentExecutor):
                                         request_id=request_id,
                                         interrupt_type=asked["interrupt_type"],
                                         details=asked["details"],
+                                        phase="asked",
                                         codex_private=asked.get("codex_private"),
                                     )
                             resolved = _extract_interrupt_resolved_event(event)
                             if resolved is not None:
-                                stream_state.clear_interrupt_pending(resolved["request_id"])
+                                if stream_state.clear_interrupt_pending(resolved["request_id"]):
+                                    await _emit_interrupt_status(
+                                        state=TaskState.working,
+                                        request_id=resolved["request_id"],
+                                        interrupt_type=resolved["interrupt_type"],
+                                        details={},
+                                        phase="resolved",
+                                        resolution=resolved["resolution"],
+                                    )
                         if event_type not in {"message.part.updated", "message.part.delta"}:
                             continue
                         part = props.get("part")
@@ -1614,7 +1633,26 @@ def _extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str
     request_id = _extract_interrupt_resolved_request_id(props)
     if not request_id:
         return None
-    return {"request_id": request_id, "event_type": event_type}
+    if event_type == "permission.replied":
+        return {
+            "request_id": request_id,
+            "event_type": event_type,
+            "interrupt_type": "permission",
+            "resolution": "replied",
+        }
+    if event_type == "question.rejected":
+        return {
+            "request_id": request_id,
+            "event_type": event_type,
+            "interrupt_type": "question",
+            "resolution": "rejected",
+        }
+    return {
+        "request_id": request_id,
+        "event_type": event_type,
+        "interrupt_type": "question",
+        "resolution": "replied",
+    }
 
 
 def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:

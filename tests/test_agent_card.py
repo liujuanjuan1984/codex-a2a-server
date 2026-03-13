@@ -57,6 +57,10 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
     assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
     assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
+    assert streaming.params["interrupt_fields"]["phase"] == "metadata.shared.interrupt.phase"
+    assert (
+        streaming.params["interrupt_fields"]["resolution"] == "metadata.shared.interrupt.resolution"
+    )
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     assert session_query.params["deployment_context"]["project"] == "alpha"
