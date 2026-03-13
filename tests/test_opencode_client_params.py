@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from unittest.mock import MagicMock
 
@@ -276,3 +277,42 @@ async def test_ensure_started_passes_reasoning_effort_override_to_codex_cli() ->
     assert captured
     args, _kwargs = captured[0]
     assert args[:4] == ("codex-custom", "-c", 'model_reasoning_effort="high"', "app-server")
+
+
+@pytest.mark.asyncio
+async def test_read_stdout_loop_handles_very_long_json_line() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    payload = {"method": "event/test", "params": {"blob": "x" * 200_000}}
+    encoded = (json.dumps(payload) + "\n").encode("utf-8")
+
+    class _ChunkedStream:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self._chunks = list(chunks)
+
+        async def read(self, _size: int) -> bytes:
+            if not self._chunks:
+                return b""
+            return self._chunks.pop(0)
+
+    process = MagicMock()
+    process.stdout = _ChunkedStream(
+        [
+            encoded[:70_000],
+            encoded[70_000:140_000],
+            encoded[140_000:],
+        ]
+    )
+    client._process = process
+
+    seen: list[dict] = []
+
+    async def fake_dispatch(message: dict[str, object]) -> None:
+        seen.append(message)
+
+    client._dispatch_message = fake_dispatch  # type: ignore[method-assign]
+
+    await client._read_stdout_loop()
+
+    assert len(seen) == 1
+    assert seen[0]["method"] == "event/test"
+    assert seen[0]["params"]["blob"] == "x" * 200_000

@@ -244,10 +244,7 @@ class OpencodeClient:
         if process is None or process.stdout is None:
             return
         try:
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
+            async for line in self._iter_stream_lines(process.stdout):
                 raw = line.decode("utf-8", errors="replace").strip()
                 if not raw:
                     continue
@@ -273,10 +270,7 @@ class OpencodeClient:
         if process is None or process.stderr is None:
             return
         try:
-            while True:
-                line = await process.stderr.readline()
-                if not line:
-                    break
+            async for line in self._iter_stream_lines(process.stderr):
                 raw = line.decode("utf-8", errors="replace").rstrip()
                 if raw:
                     logger.debug("codex app-server stderr: %s", raw)
@@ -284,6 +278,28 @@ class OpencodeClient:
             raise
         except Exception:  # pragma: no cover - defensive
             logger.exception("codex app-server stderr loop failed")
+
+    async def _iter_stream_lines(
+        self,
+        stream: Any,
+        *,
+        chunk_size: int = 64 * 1024,
+    ) -> AsyncIterator[bytes]:
+        buffer = bytearray()
+        while True:
+            chunk = await stream.read(chunk_size)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            while True:
+                newline_index = buffer.find(b"\n")
+                if newline_index < 0:
+                    break
+                line = bytes(buffer[:newline_index])
+                del buffer[: newline_index + 1]
+                yield line
+        if buffer:
+            yield bytes(buffer)
 
     async def _dispatch_message(self, message: dict[str, Any]) -> None:
         # 1) Server response to a client request.
