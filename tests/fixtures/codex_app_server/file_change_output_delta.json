@@ -18,31 +18,6 @@
       "method": "item/started",
       "params": {
         "item": {
-          "type": "commandExecution",
-          "id": "call-fixture-list",
-          "command": "/bin/bash -lc ls",
-          "cwd": "/tmp/codex-a2a-file-change-fixture",
-          "processId": "22141",
-          "status": "inProgress",
-          "commandActions": [
-            {
-              "type": "listFiles",
-              "command": "ls",
-              "path": null
-            }
-          ],
-          "aggregatedOutput": null,
-          "exitCode": null,
-          "durationMs": null
-        },
-        "threadId": "thr-fixture-file-change",
-        "turnId": "turn-fixture-file-change"
-      }
-    },
-    {
-      "method": "item/started",
-      "params": {
-        "item": {
           "type": "fileChange",
           "id": "call-fixture-file-change",
           "changes": [
@@ -67,6 +42,27 @@
         "turnId": "turn-fixture-file-change",
         "itemId": "call-fixture-file-change",
         "delta": "Success. Updated the following files:\nA fixture-from-codex.txt\n"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "fileChange",
+          "id": "call-fixture-file-change",
+          "changes": [
+            {
+              "path": "/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt",
+              "kind": {
+                "type": "add"
+              },
+              "diff": "fixture-from-codex\n"
+            }
+          ],
+          "status": "completed"
+        },
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change"
       }
     },
     {

@@ -16,6 +16,7 @@ from .config import Settings
 from .tool_call_payloads import (
     as_tool_call_payload,
     tool_call_output_delta_payload_from_notification,
+    tool_call_state_payload_from_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,9 @@ def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[s
     if thread_id is None or not isinstance(delta, str) or delta == "":
         return None
 
-    call_id = _first_string(params, "callID", "callId", "call_id")
+    explicit_call_id = _first_string(params, "callID", "callId", "call_id")
     item_id = _first_string(params, "itemId")
+    call_id = explicit_call_id or item_id
     part_id = item_id or call_id
     if part_id is None:
         return None
@@ -109,6 +111,55 @@ def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[s
         "properties": {
             "part": part,
             "delta": as_tool_call_payload(payload),
+        },
+    }
+
+
+def _build_tool_call_state_event(params: dict[str, Any]) -> dict[str, Any] | None:
+    thread_id = _first_string(params, "threadId")
+    item = params.get("item")
+    if thread_id is None or not isinstance(item, dict):
+        return None
+
+    payload = tool_call_state_payload_from_item(item)
+    if payload is None:
+        return None
+
+    part_id = _first_string(item, "id")
+    if part_id is None:
+        return None
+
+    payload_data = as_tool_call_payload(payload)
+    state_payload: dict[str, Any] = {}
+    for key in ("status", "title", "subtitle", "input", "output", "error"):
+        value = payload_data.get(key)
+        if value is not None:
+            state_payload[key] = value
+
+    part: dict[str, Any] = {
+        "sessionID": thread_id,
+        "messageID": part_id,
+        "id": part_id,
+        "type": "tool_call",
+        "role": "assistant",
+    }
+    call_id = payload_data.get("call_id")
+    if isinstance(call_id, str) and call_id:
+        part["callID"] = call_id
+    tool = payload_data.get("tool")
+    if isinstance(tool, str) and tool:
+        part["tool"] = tool
+    source_method = payload_data.get("source_method")
+    if isinstance(source_method, str) and source_method:
+        part["sourceMethod"] = source_method
+    if state_payload:
+        part["state"] = state_payload
+
+    return {
+        "type": "message.part.updated",
+        "properties": {
+            "part": part,
+            "delta": payload_data,
         },
     }
 
@@ -528,6 +579,12 @@ class OpencodeClient:
                         },
                     }
                 )
+            return
+
+        if method in {"item/started", "item/completed"}:
+            event = _build_tool_call_state_event(params)
+            if event is not None:
+                await self._enqueue_stream_event(event)
             return
 
         if method in {"item/commandExecution/outputDelta", "item/fileChange/outputDelta"}:

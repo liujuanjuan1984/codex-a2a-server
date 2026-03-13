@@ -141,6 +141,10 @@ Compatibility note:
 | `state` | `kind` | `source_method`, `call_id`, `tool`, `status`, `title`, `subtitle`, `input`, `output`, `error` | Used for structured tool state snapshots. A payload that contains only `kind=state` is invalid and is suppressed. |
 | `output_delta` | `kind`, `output_delta` | `source_method`, `call_id`, `tool`, `status` | Used for raw tool output text increments. `output_delta` is preserved verbatim and may contain spaces or trailing newlines. |
 
+  `codex app-server` lifecycle events such as `item/started` and
+  `item/completed` are normalized into `kind=state`; `item/*/outputDelta`
+  notifications are normalized into `kind=output_delta`.
+
   Examples:
 
   ```json

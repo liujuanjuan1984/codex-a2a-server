@@ -1017,13 +1017,34 @@ async def test_streaming_replays_real_command_execution_fixture_end_to_end() -> 
         for event in _artifact_updates(queue)
         if _artifact_stream_meta(event)["block_type"] == "tool_call"
     ]
-    assert len(tool_updates) == 2
-    assert [_part_data(event)["output_delta"] for event in tool_updates] == [
-        "chunk-1\r\n",
-        "chunk-2\r\n",
+    assert len(tool_updates) == 4
+    assert [_part_data(event)["kind"] for event in tool_updates] == [
+        "state",
+        "output_delta",
+        "output_delta",
+        "state",
     ]
-    assert all(_part_data(event)["kind"] == "output_delta" for event in tool_updates)
+    assert [
+        _part_data(event)["status"] for event in tool_updates if "status" in _part_data(event)
+    ] == [
+        "running",
+        "completed",
+    ]
+    assert [
+        _part_data(event)["output_delta"]
+        for event in tool_updates
+        if _part_data(event)["kind"] == "output_delta"
+    ] == [
+        "chunk-1\n",
+        "chunk-2\n",
+    ]
     assert all(_part_data(event)["source_method"] == "commandExecution" for event in tool_updates)
+    assert all(_part_data(event)["call_id"] == "call-fixture-command" for event in tool_updates)
+    assert _part_data(tool_updates[-1])["output"] == {
+        "text": "chunk-1\nchunk-2\n",
+        "exit_code": 0,
+        "duration_ms": 487,
+    }
 
 
 @pytest.mark.asyncio
@@ -1066,11 +1087,37 @@ async def test_streaming_replays_real_file_change_fixture_end_to_end() -> None:
         for event in _artifact_updates(queue)
         if _artifact_stream_meta(event)["block_type"] == "tool_call"
     ]
-    assert len(tool_updates) == 1
+    assert len(tool_updates) == 3
+    assert [_part_data(event)["kind"] for event in tool_updates] == [
+        "state",
+        "output_delta",
+        "state",
+    ]
     assert _part_data(tool_updates[0]) == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "status": "running",
+        "input": {
+            "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+            "change_count": 1,
+        },
+    }
+    assert _part_data(tool_updates[1]) == {
         "kind": "output_delta",
         "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
         "output_delta": "Success. Updated the following files:\nA fixture-from-codex.txt\n",
+    }
+    assert _part_data(tool_updates[2]) == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "status": "completed",
+        "input": {
+            "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+            "change_count": 1,
+        },
     }
 
 

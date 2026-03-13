@@ -44,7 +44,7 @@
         "threadId": "thr-fixture-command",
         "turnId": "turn-fixture-command",
         "itemId": "call-fixture-command",
-        "delta": "chunk-1\r\n"
+        "delta": "chunk-1\n"
       }
     },
     {
@@ -53,7 +53,31 @@
         "threadId": "thr-fixture-command",
         "turnId": "turn-fixture-command",
         "itemId": "call-fixture-command",
-        "delta": "chunk-2\r\n"
+        "delta": "chunk-2\n"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "commandExecution",
+          "id": "call-fixture-command",
+          "command": "/bin/bash -lc \"python3 -c \\\"import sys,time; [print(f'chunk-{i}', flush=True) or time.sleep(0.2) for i in range(3)]\\\"\"",
+          "cwd": "/tmp/codex-a2a-command-fixture",
+          "processId": "4088",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "unknown",
+              "command": "python3 -c \"import sys,time; [print(f'chunk-{i}', flush=True) or time.sleep(0.2) for i in range(3)]\""
+            }
+          ],
+          "aggregatedOutput": "chunk-1\nchunk-2\n",
+          "exitCode": 0,
+          "durationMs": 487
+        },
+        "threadId": "thr-fixture-command",
+        "turnId": "turn-fixture-command"
       }
     },
     {

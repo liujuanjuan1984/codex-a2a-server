@@ -18,6 +18,32 @@ def _normalized_optional_string(value: Any) -> str | None:
     return normalized or None
 
 
+def _normalized_status(value: Any) -> str | None:
+    normalized = _normalized_optional_string(value)
+    if normalized is None:
+        return None
+    aliases = {
+        "inProgress": "running",
+        "in_progress": "running",
+        "running": "running",
+        "completed": "completed",
+        "failed": "failed",
+        "error": "failed",
+        "errored": "failed",
+        "cancelled": "cancelled",
+        "canceled": "cancelled",
+        "pending": "pending",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _source_method_from_item_type(value: Any) -> ToolCallSourceMethod | None:
+    normalized = _normalized_optional_string(value)
+    if normalized in {"commandExecution", "fileChange"}:
+        return cast(ToolCallSourceMethod, normalized)
+    return None
+
+
 class ToolCallStatePayload(A2ABaseModel):
     kind: Literal["state"] = "state"
     source_method: ToolCallSourceMethod | None = Field(
@@ -36,7 +62,7 @@ class ToolCallStatePayload(A2ABaseModel):
     output: Any | None = None
     error: Any | None = None
 
-    @field_validator("call_id", "tool", "status", mode="before")
+    @field_validator("call_id", "tool", mode="before")
     @classmethod
     def _strip_text_fields(cls, value: Any) -> str | None:
         return _normalized_optional_string(value)
@@ -44,10 +70,12 @@ class ToolCallStatePayload(A2ABaseModel):
     @field_validator("source_method", mode="before")
     @classmethod
     def _normalize_source_method(cls, value: Any) -> ToolCallSourceMethod | None:
-        normalized = _normalized_optional_string(value)
-        if normalized in {"commandExecution", "fileChange"}:
-            return cast(ToolCallSourceMethod, normalized)
-        return None
+        return _source_method_from_item_type(value)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status_field(cls, value: Any) -> str | None:
+        return _normalized_status(value)
 
 
 class ToolCallOutputDeltaPayload(A2ABaseModel):
@@ -67,7 +95,7 @@ class ToolCallOutputDeltaPayload(A2ABaseModel):
         validation_alias=AliasChoices("output_delta", "outputDelta"),
     )
 
-    @field_validator("call_id", "tool", "status", mode="before")
+    @field_validator("call_id", "tool", mode="before")
     @classmethod
     def _strip_text_fields(cls, value: Any) -> str | None:
         return _normalized_optional_string(value)
@@ -75,10 +103,12 @@ class ToolCallOutputDeltaPayload(A2ABaseModel):
     @field_validator("source_method", mode="before")
     @classmethod
     def _normalize_source_method(cls, value: Any) -> ToolCallSourceMethod | None:
-        normalized = _normalized_optional_string(value)
-        if normalized in {"commandExecution", "fileChange"}:
-            return cast(ToolCallSourceMethod, normalized)
-        return None
+        return _source_method_from_item_type(value)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status_field(cls, value: Any) -> str | None:
+        return _normalized_status(value)
 
     @field_validator("output_delta", mode="before")
     @classmethod
@@ -143,6 +173,71 @@ def tool_call_state_payload_from_part(part: Mapping[str, Any]) -> ToolCallStateP
     return _build_state_payload(payload)
 
 
+def tool_call_state_payload_from_item(item: Mapping[str, Any]) -> ToolCallStatePayload | None:
+    source_method = _source_method_from_item_type(item.get("type"))
+    call_id = _normalized_optional_string(item.get("id"))
+    if source_method is None or call_id is None:
+        return None
+
+    payload: dict[str, Any] = {
+        "kind": "state",
+        "source_method": source_method,
+        "call_id": call_id,
+        "status": item.get("status"),
+    }
+
+    if source_method == "commandExecution":
+        command = _normalized_optional_string(item.get("command"))
+        cwd = _normalized_optional_string(item.get("cwd"))
+        if command is not None or cwd is not None:
+            command_input: dict[str, Any] = {}
+            if command is not None:
+                command_input["command"] = command
+            if cwd is not None:
+                command_input["cwd"] = cwd
+            payload["input"] = command_input
+
+        aggregated_output = item.get("aggregatedOutput")
+        exit_code = item.get("exitCode")
+        duration_ms = item.get("durationMs")
+        if (
+            isinstance(aggregated_output, str)
+            and aggregated_output != ""
+            or exit_code is not None
+            or duration_ms is not None
+        ):
+            command_output: dict[str, Any] = {}
+            if isinstance(aggregated_output, str) and aggregated_output != "":
+                command_output["text"] = aggregated_output
+            if exit_code is not None:
+                command_output["exit_code"] = exit_code
+            if duration_ms is not None:
+                command_output["duration_ms"] = duration_ms
+            payload["output"] = command_output
+
+    if source_method == "fileChange":
+        changes = item.get("changes")
+        if isinstance(changes, list):
+            paths = [
+                path
+                for change in changes
+                if isinstance(change, Mapping)
+                for path in [_normalized_optional_string(change.get("path"))]
+                if path is not None
+            ]
+            if paths:
+                payload["input"] = {
+                    "paths": paths,
+                    "change_count": len(paths),
+                }
+
+    error = item.get("error")
+    if error is not None:
+        payload["error"] = error
+
+    return _build_state_payload(payload)
+
+
 def tool_call_output_delta_payload_from_notification(
     *,
     source_method: ToolCallSourceMethod,
@@ -159,8 +254,9 @@ def tool_call_output_delta_payload_from_notification(
         "source_method": source_method,
         "output_delta": delta,
     }
-    if call_id is not None:
-        payload["call_id"] = call_id
+    normalized_call_id = _normalized_optional_string(call_id)
+    if normalized_call_id is not None:
+        payload["call_id"] = normalized_call_id
     if tool is not None:
         payload["tool"] = tool
     if status is not None:
