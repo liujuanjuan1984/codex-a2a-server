@@ -74,8 +74,10 @@ Compatibility note:
   Codex `part.type` (plus `part_id` state) rather than inline text markers.
   `message.part.delta` and `message.part.updated` are merged per `part_id`;
   out-of-order deltas are buffered and replayed when the corresponding
-  `part.updated` arrives. Structured `tool` parts are emitted as `tool_call`
-  blocks with normalized state payload. Final status event metadata may include
+  `part.updated` arrives. `text` and `reasoning` chunks are emitted as
+  `TextPart`, while `tool_call` chunks are emitted as `DataPart` with a
+  normalized structured payload (for example `tool`, `call_id`, `status`,
+  `input`, `output`, `error`). Final status event metadata may include
   normalized token usage at `metadata.shared.usage` with fields like
   `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
   Interrupt events (`permission.asked` / `question.asked`) are mapped to

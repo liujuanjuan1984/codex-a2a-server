@@ -414,7 +414,9 @@ Application-level safeguards:
   inline marker parsing
 - `message.part.delta` may arrive before `message.part.updated`; the service
   buffers those deltas and replays them when the part state is available
-- structured `tool` parts are emitted as `tool_call` block updates
+- `text` and `reasoning` stream chunks use `TextPart`; `tool_call` stream
+  chunks use `DataPart` with normalized structured tool payload fields such as
+  `tool`, `call_id`, `status`, `input`, `output`, and `error`
 - events without `message_id` are discarded to avoid ambiguous correlation
 - final snapshot is emitted only when stream chunks did not already produce
   the same final text; stream then closes with `TaskStatusUpdateEvent(final=true)`

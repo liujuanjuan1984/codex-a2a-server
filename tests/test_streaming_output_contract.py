@@ -188,7 +188,18 @@ def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
 
 def _part_text(event: TaskArtifactUpdateEvent) -> str:
     part = event.artifact.parts[0]
-    return getattr(part, "text", None) or getattr(part.root, "text", "")
+    return getattr(part, "text", None) or getattr(getattr(part, "root", None), "text", "") or ""
+
+
+def _part_data(event: TaskArtifactUpdateEvent) -> dict:
+    part = event.artifact.parts[0]
+    data = getattr(part, "data", None) or getattr(getattr(part, "root", None), "data", None)
+    return data if isinstance(data, dict) else {}
+
+
+def _part_kind(event: TaskArtifactUpdateEvent) -> str:
+    part = event.artifact.parts[0]
+    return getattr(part, "kind", None) or getattr(getattr(part, "root", None), "kind", "") or ""
 
 
 def _artifact_stream_meta(event: TaskArtifactUpdateEvent) -> dict:
@@ -234,6 +245,12 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     assert user_text not in texts
     block_types = [_artifact_stream_meta(event)["block_type"] for event in updates]
     assert _unique(block_types) == ["reasoning", "tool_call", "text"]
+    tool_updates = [
+        event for event in updates if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 1
+    assert _part_kind(tool_updates[0]) == "data"
+    assert _part_data(tool_updates[0]) == {"tool": "search"}
     artifact_ids = [event.artifact.artifact_id for event in updates]
     assert len(set(artifact_ids)) == 1
     sequences = [_artifact_stream_meta(event)["sequence"] for event in updates]
@@ -578,10 +595,10 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
     updates = _artifact_updates(queue)
     tool_updates = [ev for ev in updates if _artifact_stream_meta(ev)["block_type"] == "tool_call"]
     assert len(tool_updates) == 3
-    merged = "".join(_part_text(ev) for ev in tool_updates)
-    assert '"status":"pending"' in merged
-    assert '"status":"running"' in merged
-    assert '"status":"completed"' in merged
+    assert all(_part_kind(ev) == "data" for ev in tool_updates)
+    assert [_part_data(ev)["status"] for ev in tool_updates] == ["pending", "running", "completed"]
+    assert all(_part_data(ev)["tool"] == "bash" for ev in tool_updates)
+    assert all(_part_data(ev)["call_id"] == "call-1" for ev in tool_updates)
 
 
 @pytest.mark.asyncio
@@ -739,6 +756,51 @@ async def test_streaming_supports_message_part_delta_events() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_tool_call_delta_events_as_data_parts() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool_call",
+                delta="",
+                part_id="prt-tool-delta",
+                text="",
+            ),
+            _delta_event(
+                session_id="ses-1",
+                part_id="prt-tool-delta",
+                delta='{"tool":"bash","status":"running"}',
+            ),
+            _delta_event(
+                session_id="ses-1",
+                part_id="prt-tool-delta",
+                delta='{"tool":"bash","status":"completed"}',
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-delta", context_id="ctx-tool-delta", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 2
+    assert all(_part_kind(event) == "data" for event in tool_updates)
+    assert [_part_data(event)["status"] for event in tool_updates] == ["running", "completed"]
+    assert all(_part_data(event)["tool"] == "bash" for event in tool_updates)
 
 
 @pytest.mark.asyncio
