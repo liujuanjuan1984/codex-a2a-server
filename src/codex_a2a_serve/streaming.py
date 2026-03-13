@@ -550,17 +550,19 @@ async def consume_codex_stream(
     def tool_delta_chunks(
         *,
         state: StreamPartState,
-        delta_text: str,
+        delta_value: Any,
         message_id: str | None,
         source: str,
     ) -> list[NormalizedStreamChunk]:
-        payload = parse_tool_payload(delta_text)
+        payload = parse_tool_payload(delta_value)
         if payload is None:
             logger.warning(
-                "Suppressing invalid tool_call delta task_id=%s session_id=%s delta=%s",
+                "Suppressing unrecognized tool_call payload "
+                "task_id=%s session_id=%s source=%s payload=%s",
                 task_id,
                 session_id,
-                delta_text,
+                source,
+                delta_value,
             )
             return []
         tool_chunk = serialize_tool_payload(payload)
@@ -690,7 +692,7 @@ async def consume_codex_stream(
                         if state.block_type == BlockType.TOOL_CALL:
                             chunks = tool_delta_chunks(
                                 state=state,
-                                delta_text=delta,
+                                delta_value=delta,
                                 message_id=message_id,
                                 source="delta_event",
                             )
@@ -729,7 +731,7 @@ async def consume_codex_stream(
                             chunks.extend(
                                 tool_delta_chunks(
                                     state=state,
-                                    delta_text=buffered.delta,
+                                    delta_value=buffered.delta,
                                     message_id=buffered.message_id,
                                     source="delta_event_buffered",
                                 )
@@ -745,31 +747,31 @@ async def consume_codex_stream(
                             )
 
                     delta = props.get("delta")
-                    if isinstance(delta, str) and delta:
-                        if state.block_type == BlockType.TOOL_CALL:
+                    if state.block_type == BlockType.TOOL_CALL:
+                        if delta is not None and (not isinstance(delta, str) or delta):
                             chunks.extend(
                                 tool_delta_chunks(
                                     state=state,
-                                    delta_text=delta,
+                                    delta_value=delta,
                                     message_id=message_id,
                                     source="delta",
                                 )
                             )
                         else:
                             chunks.extend(
-                                delta_chunks(
+                                tool_chunks(
                                     state=state,
-                                    delta_text=delta,
+                                    part=part,
                                     message_id=message_id,
-                                    source="delta",
                                 )
                             )
-                    elif state.block_type == BlockType.TOOL_CALL:
+                    elif isinstance(delta, str) and delta:
                         chunks.extend(
-                            tool_chunks(
+                            delta_chunks(
                                 state=state,
-                                part=part,
+                                delta_text=delta,
                                 message_id=message_id,
+                                source="delta",
                             )
                         )
                     elif isinstance(part.get("text"), str):
@@ -1069,42 +1071,125 @@ def serialize_tool_payload(payload: Mapping[str, Any]) -> str:
 
 
 def extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None:
-    payload: dict[str, Any] = {}
-    for source_key in ("callID", "callId", "call_id"):
+    for source_key in ("toolPayload", "tool_payload", "payload", "data"):
         value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["call_id"] = normalized
-                break
-    for source_key in ("tool", "name"):
-        value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["tool"] = normalized
-                break
+        if isinstance(value, Mapping):
+            payload = normalize_tool_payload(value)
+            if payload is not None:
+                return payload
+
+    payload: dict[str, Any] = {"kind": "state"}
+    call_id = _normalized_string_candidates(part, "callID", "callId", "call_id")
+    if call_id is not None:
+        payload["call_id"] = call_id
+    tool = _normalized_string_candidates(part, "tool", "name")
+    if tool is not None:
+        payload["tool"] = tool
+    source_method = _normalized_string_candidates(part, "source_method", "sourceMethod")
+    if source_method is not None:
+        payload["source_method"] = source_method
     state = part.get("state")
     if isinstance(state, Mapping):
-        status = state.get("status")
-        if isinstance(status, str):
-            normalized = status.strip()
-            if normalized:
-                payload["status"] = normalized
+        status = _normalized_string_candidates(state, "status")
+        if status is not None:
+            payload["status"] = status
         for key in ("title", "subtitle", "input", "output", "error"):
             value = state.get(key)
             if value is not None:
                 payload[key] = value
-    if not payload:
+    if len(payload) == 1:
         return None
     return payload
 
 
-def parse_tool_payload(raw: str) -> dict[str, Any] | None:
+def _normalized_string_candidates(payload: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+    return None
+
+
+def normalize_tool_payload(
+    payload: Mapping[str, Any],
+    *,
+    preserve_extra_fields: bool = False,
+) -> dict[str, Any] | None:
+    kind = _normalized_string_candidates(payload, "kind")
+    output_delta = None
+    for key in ("output_delta", "outputDelta"):
+        value = payload.get(key)
+        if isinstance(value, str) and value != "":
+            output_delta = value
+            break
+    if kind is None:
+        kind = "output_delta" if output_delta is not None else "state"
+    if kind not in {"state", "output_delta"}:
+        return None
+
+    normalized: dict[str, Any] = {"kind": kind}
+    source_method = _normalized_string_candidates(payload, "source_method", "sourceMethod")
+    if source_method is not None:
+        normalized["source_method"] = source_method
+    call_id = _normalized_string_candidates(payload, "call_id", "callID", "callId")
+    if call_id is not None:
+        normalized["call_id"] = call_id
+    tool = _normalized_string_candidates(payload, "tool", "name")
+    if tool is not None:
+        normalized["tool"] = tool
+    status = _normalized_string_candidates(payload, "status")
+    if status is not None:
+        normalized["status"] = status
+
+    for key in ("title", "subtitle", "input", "output", "error"):
+        value = payload.get(key)
+        if value is not None:
+            normalized[key] = value
+
+    if kind == "output_delta":
+        if output_delta is None:
+            return None
+        normalized["output_delta"] = output_delta
+
+    if preserve_extra_fields:
+        for key, value in payload.items():
+            if key in {
+                "kind",
+                "source_method",
+                "sourceMethod",
+                "call_id",
+                "callID",
+                "callId",
+                "tool",
+                "name",
+                "status",
+                "title",
+                "subtitle",
+                "input",
+                "output",
+                "error",
+                "output_delta",
+                "outputDelta",
+            }:
+                continue
+            normalized[key] = value
+
+    if kind == "state" and len(normalized) == 1:
+        return None
+    return normalized
+
+
+def parse_tool_payload(raw: Any) -> dict[str, Any] | None:
+    if isinstance(raw, Mapping):
+        return normalize_tool_payload(raw, preserve_extra_fields=True)
+    if not isinstance(raw, str):
+        return None
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return None
     if not isinstance(payload, Mapping):
         return None
-    return dict(payload)
+    return normalize_tool_payload(payload, preserve_extra_fields=True)

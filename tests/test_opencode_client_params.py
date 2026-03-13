@@ -167,6 +167,54 @@ async def test_stream_events_broadcasts_to_all_consumers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_notification_normalizes_tool_output_delta_payload() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_notification(
+        {
+            "method": "item/commandExecution/outputDelta",
+            "params": {
+                "threadId": "thr-1",
+                "itemId": "msg-1",
+                "callID": "call-1",
+                "tool": "bash",
+                "state": {"status": "running"},
+                "delta": "Passed\n",
+            },
+        }
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["type"] == "message.part.updated"
+    assert event["properties"]["part"] == {
+        "sessionID": "thr-1",
+        "messageID": "msg-1",
+        "id": "msg-1",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-1",
+        "tool": "bash",
+        "state": {"status": "running"},
+        "sourceMethod": "commandExecution",
+    }
+    assert event["properties"]["delta"] == {
+        "kind": "output_delta",
+        "source_method": "commandExecution",
+        "call_id": "call-1",
+        "tool": "bash",
+        "status": "running",
+        "output_delta": "Passed\n",
+    }
+
+
+@pytest.mark.asyncio
 async def test_send_message_timeout_override_none_disables_wait_timeout() -> None:
     client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=0.01))
 

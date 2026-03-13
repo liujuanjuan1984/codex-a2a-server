@@ -108,8 +108,12 @@ Compatibility note:
   out-of-order deltas are buffered and replayed when the corresponding
   `part.updated` arrives. `text` and `reasoning` chunks are emitted as
   `TextPart`, while `tool_call` chunks are emitted as `DataPart` with a
-  normalized structured payload (for example `tool`, `call_id`, `status`,
-  `input`, `output`, `error`). To avoid character-level event floods, the
+  normalized structured payload. Tool payloads use `kind` to distinguish
+  structured state updates from plain tool output text:
+  `kind=state` carries fields such as `tool`, `call_id`, `status`, `input`,
+  `output`, and `error`; `kind=output_delta` carries the raw text increment in
+  `output_delta` and may also include `source_method`, `tool`, `call_id`, and
+  `status`. To avoid character-level event floods, the
   service performs light server-side aggregation before emitting `text` and
   `reasoning` updates: `text` flushes at `120 chars or 200ms`, `reasoning`
   flushes at `240 chars or 350ms`, and both flush immediately on block

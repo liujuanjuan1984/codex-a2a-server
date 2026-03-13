@@ -24,6 +24,92 @@ _EVENT_QUEUE_MAXSIZE = 2048
 _INTERRUPT_REQUEST_TTL_SECONDS = 3600
 
 
+def _normalized_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _first_string(payload: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = _normalized_string(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_tool_status(payload: dict[str, Any]) -> str | None:
+    value = _first_string(payload, "status")
+    if value is not None:
+        return value
+    state = payload.get("state")
+    if isinstance(state, dict):
+        return _first_string(state, "status")
+    return None
+
+
+def _tool_source_method(method: str) -> str | None:
+    parts = method.split("/")
+    if len(parts) < 2:
+        return None
+    return _normalized_string(parts[1])
+
+
+def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    thread_id = _first_string(params, "threadId")
+    delta = params.get("delta")
+    if thread_id is None or not isinstance(delta, str) or delta == "":
+        return None
+
+    call_id = _first_string(params, "callID", "callId", "call_id")
+    item_id = _first_string(params, "itemId")
+    part_id = item_id or call_id
+    if part_id is None:
+        return None
+
+    tool = _first_string(params, "tool", "name")
+    status = _extract_tool_status(params)
+    source_method = _tool_source_method(method)
+    payload: dict[str, Any] = {
+        "kind": "output_delta",
+        "output_delta": delta,
+    }
+    if source_method is not None:
+        payload["source_method"] = source_method
+    if call_id is not None:
+        payload["call_id"] = call_id
+    if tool is not None:
+        payload["tool"] = tool
+    if status is not None:
+        payload["status"] = status
+
+    part: dict[str, Any] = {
+        "sessionID": thread_id,
+        "id": part_id,
+        "type": "tool_call",
+        "role": "assistant",
+    }
+    if item_id is not None:
+        part["messageID"] = item_id
+    if call_id is not None:
+        part["callID"] = call_id
+    if tool is not None:
+        part["tool"] = tool
+    if status is not None:
+        part["state"] = {"status": status}
+    if source_method is not None:
+        part["sourceMethod"] = source_method
+
+    return {
+        "type": "message.part.updated",
+        "properties": {
+            "part": part,
+            "delta": payload,
+        },
+    }
+
+
 @dataclass(frozen=True)
 class OpencodeMessage:
     text: str
@@ -442,25 +528,9 @@ class OpencodeClient:
             return
 
         if method in {"item/commandExecution/outputDelta", "item/fileChange/outputDelta"}:
-            thread_id = str(params.get("threadId", "")).strip()
-            delta = params.get("delta")
-            item_id = str(params.get("itemId", "")).strip()
-            if thread_id and isinstance(delta, str):
-                await self._enqueue_stream_event(
-                    {
-                        "type": "message.part.updated",
-                        "properties": {
-                            "part": {
-                                "sessionID": thread_id,
-                                "messageID": item_id,
-                                "id": item_id,
-                                "type": "tool_call",
-                                "role": "assistant",
-                            },
-                            "delta": delta,
-                        },
-                    }
-                )
+            event = _build_tool_call_output_event(method, params)
+            if event is not None:
+                await self._enqueue_stream_event(event)
             return
 
         if method == "thread/tokenUsage/updated":
