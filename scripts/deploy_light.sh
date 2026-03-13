@@ -353,7 +353,7 @@ stop_instance() {
   if ! is_running; then
     rm -f "$PID_FILE"
     echo "Instance '${INSTANCE}' is not running."
-    exit 0
+    return 0
   fi
   local pid
   pid="$(cat "$PID_FILE")"
@@ -362,13 +362,14 @@ stop_instance() {
     if ! kill -0 "$pid" >/dev/null 2>&1; then
       rm -f "$PID_FILE"
       echo "Instance '${INSTANCE}' stopped."
-      exit 0
+      return 0
     fi
     sleep 0.2
   done
   kill -9 "$pid" >/dev/null 2>&1 || true
   rm -f "$PID_FILE"
   echo "Instance '${INSTANCE}' force-stopped."
+  return 0
 }
 
 status_instance() {

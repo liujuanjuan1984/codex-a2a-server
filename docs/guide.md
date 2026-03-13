@@ -83,7 +83,8 @@ Compatibility note:
 - `logs/light/<instance>.log` is kept as a stable alias to the latest launch,
   so `tail -f logs/light/<instance>.log` remains a convenient default.
 - `restart` means `stop` the existing PID first, then `start` a fresh process;
-  it does not reload the old process in place.
+  it does not reload the old process in place. If the instance is not running,
+  `restart` falls through to a fresh `start`.
 - `status` reports the actual log file for the currently running instance and,
   when stopped, the most recent log path remembered by the script.
 
