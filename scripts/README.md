@@ -24,7 +24,9 @@ overview, runtime contracts, or deployment rationale in detail.
   `~/.codex/config.toml` by default, supports explicit instance overrides such
   as `codex_model=...` and
   `codex_model_reasoning_effort=...`, and blocks known-invalid model /
-  reasoning combinations before launch.
+  reasoning combinations before launch. Each `start` / `restart` writes to a
+  timestamped log file under `logs/light/`, while `logs/light/<instance>.log`
+  stays as the stable alias to the latest launch.
 - [`scripts/start_services.sh`](./start_services.sh):
   local foreground runner without systemd.
 - [`scripts/uninstall.sh`](./uninstall.sh):
