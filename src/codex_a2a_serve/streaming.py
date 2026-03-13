@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections import defaultdict
@@ -20,6 +19,13 @@ from .output_mapping import (
     enqueue_artifact_update,
     extract_token_usage,
     merge_token_usage,
+)
+from .tool_call_payloads import (
+    ToolCallPayload,
+    as_tool_call_payload,
+    normalize_tool_call_payload,
+    serialize_tool_call_payload,
+    tool_call_state_payload_from_part,
 )
 
 _INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
@@ -76,6 +82,8 @@ class StreamPartState:
     role: str | None
     buffer: str = ""
     saw_delta: bool = False
+    emitted_tool_chunks: int = 0
+    last_tool_state_payload: str | None = None
 
 
 @dataclass
@@ -313,11 +321,7 @@ async def consume_codex_stream(
             session_id,
             chunk.block_type,
             effective_append,
-            (
-                chunk.part.text
-                if isinstance(chunk.part, TextPart)
-                else serialize_tool_payload(chunk.part.data)
-            ),
+            chunk.part.text if isinstance(chunk.part, TextPart) else chunk.part.data,
         )
 
     def seconds_until_buffer_flush() -> float | None:
@@ -517,65 +521,28 @@ async def consume_codex_stream(
         )
         return []
 
-    def tool_chunks(
+    def emit_tool_payload_chunk(
         *,
         state: StreamPartState,
-        part: Mapping[str, Any],
-        message_id: str | None,
-    ) -> list[NormalizedStreamChunk]:
-        payload = extract_tool_part_payload(part)
-        if payload is None:
-            return []
-        tool_chunk = serialize_tool_payload(payload)
-        if message_id:
-            state.message_id = message_id
-        previous = state.buffer
-        if tool_chunk == previous:
-            return []
-        state.buffer = tool_chunk
-        content_key = tool_chunk if not previous else f"\n{tool_chunk}"
-        return [
-            new_chunk(
-                part=DataPart(data=payload),
-                content_key=content_key,
-                append=bool(previous),
-                block_type=state.block_type,
-                source="tool_part_update",
-                message_id=state.message_id,
-                role=state.role,
-                part_id=state.part_id,
-            )
-        ]
-
-    def tool_delta_chunks(
-        *,
-        state: StreamPartState,
-        delta_text: str,
+        payload: ToolCallPayload,
         message_id: str | None,
         source: str,
     ) -> list[NormalizedStreamChunk]:
-        payload = parse_tool_payload(delta_text)
-        if payload is None:
-            logger.warning(
-                "Suppressing invalid tool_call delta task_id=%s session_id=%s delta=%s",
-                task_id,
-                session_id,
-                delta_text,
-            )
-            return []
-        tool_chunk = serialize_tool_payload(payload)
+        tool_chunk = serialize_tool_call_payload(payload)
         if message_id:
             state.message_id = message_id
-        previous = state.buffer
-        if tool_chunk == previous:
+        if payload.kind == "state" and tool_chunk == state.last_tool_state_payload:
             return []
-        state.buffer = tool_chunk
-        content_key = tool_chunk if not previous else f"\n{tool_chunk}"
+        append = state.emitted_tool_chunks > 0
+        state.emitted_tool_chunks += 1
+        if payload.kind == "state":
+            state.last_tool_state_payload = tool_chunk
+        content_key = tool_chunk if not append else f"\n{tool_chunk}"
         return [
             new_chunk(
-                part=DataPart(data=payload),
+                part=DataPart(data=as_tool_call_payload(payload)),
                 content_key=content_key,
-                append=bool(previous),
+                append=append,
                 block_type=state.block_type,
                 source=source,
                 message_id=state.message_id,
@@ -583,6 +550,57 @@ async def consume_codex_stream(
                 part_id=state.part_id,
             )
         ]
+
+    def tool_part_chunks(
+        *,
+        state: StreamPartState,
+        part: Mapping[str, Any],
+        message_id: str | None,
+    ) -> list[NormalizedStreamChunk]:
+        payload = tool_call_state_payload_from_part(part)
+        if payload is None:
+            return []
+        return emit_tool_payload_chunk(
+            state=state,
+            payload=payload,
+            message_id=message_id,
+            source="tool_part_update",
+        )
+
+    def tool_delta_chunks(
+        *,
+        state: StreamPartState,
+        delta_value: Any,
+        message_id: str | None,
+        source: str,
+    ) -> list[NormalizedStreamChunk]:
+        if not isinstance(delta_value, Mapping):
+            logger.warning(
+                "Suppressing non-structured tool_call payload "
+                "task_id=%s session_id=%s source=%s payload=%s",
+                task_id,
+                session_id,
+                source,
+                delta_value,
+            )
+            return []
+        payload = normalize_tool_call_payload(delta_value)
+        if payload is None:
+            logger.warning(
+                "Suppressing unrecognized tool_call payload "
+                "task_id=%s session_id=%s source=%s payload=%s",
+                task_id,
+                session_id,
+                source,
+                delta_value,
+            )
+            return []
+        return emit_tool_payload_chunk(
+            state=state,
+            payload=payload,
+            message_id=message_id,
+            source=source,
+        )
 
     try:
         while not stop_event.is_set():
@@ -690,7 +708,7 @@ async def consume_codex_stream(
                         if state.block_type == BlockType.TOOL_CALL:
                             chunks = tool_delta_chunks(
                                 state=state,
-                                delta_text=delta,
+                                delta_value=delta,
                                 message_id=message_id,
                                 source="delta_event",
                             )
@@ -729,7 +747,7 @@ async def consume_codex_stream(
                             chunks.extend(
                                 tool_delta_chunks(
                                     state=state,
-                                    delta_text=buffered.delta,
+                                    delta_value=buffered.delta,
                                     message_id=buffered.message_id,
                                     source="delta_event_buffered",
                                 )
@@ -745,31 +763,31 @@ async def consume_codex_stream(
                             )
 
                     delta = props.get("delta")
-                    if isinstance(delta, str) and delta:
-                        if state.block_type == BlockType.TOOL_CALL:
+                    if state.block_type == BlockType.TOOL_CALL:
+                        if delta is not None and (not isinstance(delta, str) or delta):
                             chunks.extend(
                                 tool_delta_chunks(
                                     state=state,
-                                    delta_text=delta,
+                                    delta_value=delta,
                                     message_id=message_id,
                                     source="delta",
                                 )
                             )
                         else:
                             chunks.extend(
-                                delta_chunks(
+                                tool_part_chunks(
                                     state=state,
-                                    delta_text=delta,
+                                    part=part,
                                     message_id=message_id,
-                                    source="delta",
                                 )
                             )
-                    elif state.block_type == BlockType.TOOL_CALL:
+                    elif isinstance(delta, str) and delta:
                         chunks.extend(
-                            tool_chunks(
+                            delta_chunks(
                                 state=state,
-                                part=part,
+                                delta_text=delta,
                                 message_id=message_id,
+                                source="delta",
                             )
                         )
                     elif isinstance(part.get("text"), str):
@@ -1062,49 +1080,3 @@ def classify_stream_block_type(
     ):
         return BlockType.TEXT
     return None
-
-
-def serialize_tool_payload(payload: Mapping[str, Any]) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None:
-    payload: dict[str, Any] = {}
-    for source_key in ("callID", "callId", "call_id"):
-        value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["call_id"] = normalized
-                break
-    for source_key in ("tool", "name"):
-        value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["tool"] = normalized
-                break
-    state = part.get("state")
-    if isinstance(state, Mapping):
-        status = state.get("status")
-        if isinstance(status, str):
-            normalized = status.strip()
-            if normalized:
-                payload["status"] = normalized
-        for key in ("title", "subtitle", "input", "output", "error"):
-            value = state.get(key)
-            if value is not None:
-                payload[key] = value
-    if not payload:
-        return None
-    return payload
-
-
-def parse_tool_payload(raw: str) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, Mapping):
-        return None
-    return dict(payload)

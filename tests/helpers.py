@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, PropertyMock
 
@@ -7,8 +9,10 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, MessageSendParams, Role, TextPart
 
-from codex_a2a_serve.codex_client import InterruptRequestBinding, OpencodeMessage
+from codex_a2a_serve.codex_client import InterruptRequestBinding, OpencodeClient, OpencodeMessage
 from codex_a2a_serve.config import Settings
+
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -18,6 +22,27 @@ def make_settings(**overrides: Any) -> Settings:
     }
     base.update(overrides)
     return Settings(**base)
+
+
+def load_json_fixture(*relative_parts: str) -> Any:
+    fixture_path = _FIXTURES_DIR.joinpath(*relative_parts)
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+async def replay_codex_notification_fixture(
+    *relative_parts: str,
+) -> tuple[dict[str, Any], list[dict]]:
+    fixture = load_json_fixture(*relative_parts)
+    client = OpencodeClient(make_settings(a2a_bearer_token="test-token", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+    for notification in fixture["notifications"]:
+        await client._handle_notification(notification)
+    return fixture, events
 
 
 class DummyEventQueue:

@@ -6,7 +6,12 @@ from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 from codex_a2a_serve.agent import OpencodeAgentExecutor
 from codex_a2a_serve.codex_client import OpencodeMessage
 from codex_a2a_serve.streaming import extract_interrupt_resolved_event
-from tests.helpers import DummyEventQueue, make_request_context, make_settings
+from tests.helpers import (
+    DummyEventQueue,
+    make_request_context,
+    make_settings,
+    replay_codex_notification_fixture,
+)
 
 
 class DummyStreamingClient:
@@ -140,6 +145,62 @@ def _delta_event(
     }
 
 
+def _tool_call_update_event(
+    *,
+    session_id: str,
+    part_id: str,
+    payload: dict,
+    message_id: str | None = "msg-1",
+    call_id: str | None = None,
+    tool: str | None = None,
+    source_method: str | None = None,
+    status: str | None = None,
+) -> dict:
+    part: dict = {
+        "id": part_id,
+        "sessionID": session_id,
+        "type": "tool_call",
+        "role": "assistant",
+    }
+    if message_id is not None:
+        part["messageID"] = message_id
+    if call_id is not None:
+        part["callID"] = call_id
+    if tool is not None:
+        part["tool"] = tool
+    if source_method is not None:
+        part["sourceMethod"] = source_method
+    if status is not None:
+        part["state"] = {"status": status}
+    return {
+        "type": "message.part.updated",
+        "properties": {
+            "part": part,
+            "delta": payload,
+        },
+    }
+
+
+def _fixture_response_message_id(fixture: dict) -> str:
+    for notification in fixture["notifications"]:
+        if notification.get("method") != "item/agentMessage/delta":
+            continue
+        params = notification.get("params", {})
+        item_id = params.get("itemId")
+        if isinstance(item_id, str) and item_id:
+            return item_id
+    raise AssertionError("fixture is missing item/agentMessage/delta")
+
+
+def _fixture_session_id(fixture: dict) -> str:
+    for notification in fixture["notifications"]:
+        params = notification.get("params", {})
+        thread_id = params.get("threadId")
+        if isinstance(thread_id, str) and thread_id:
+            return thread_id
+    raise AssertionError("fixture is missing threadId")
+
+
 def _step_finish_usage_event(
     *,
     session_id: str,
@@ -246,11 +307,14 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
         stream_events_payload=[
             _event(session_id="ses-1", role="ROLE_USER", part_type="text", delta=user_text),
             _event(session_id="ses-1", role="assistant", part_type="reasoning", delta="thinking"),
-            _event(
+            _tool_call_update_event(
                 session_id="ses-1",
-                role="assistant",
-                part_type="tool_call",
-                delta='{"tool":"search"}',
+                part_id="prt-tool-search",
+                tool="search",
+                payload={
+                    "kind": "state",
+                    "tool": "search",
+                },
             ),
             _event(session_id="ses-1", role="assistant", part_type="text", delta="final answer"),
         ],
@@ -275,7 +339,7 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     ]
     assert len(tool_updates) == 1
     assert _part_kind(tool_updates[0]) == "data"
-    assert _part_data(tool_updates[0]) == {"tool": "search"}
+    assert _part_data(tool_updates[0]) == {"kind": "state", "tool": "search"}
     artifact_ids = [event.artifact.artifact_id for event in updates]
     assert len(set(artifact_ids)) == 1
     sequences = [_artifact_stream_meta(event)["sequence"] for event in updates]
@@ -722,9 +786,339 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
     tool_updates = [ev for ev in updates if _artifact_stream_meta(ev)["block_type"] == "tool_call"]
     assert len(tool_updates) == 3
     assert all(_part_kind(ev) == "data" for ev in tool_updates)
+    assert all(_part_data(ev)["kind"] == "state" for ev in tool_updates)
     assert [_part_data(ev)["status"] for ev in tool_updates] == ["pending", "running", "completed"]
     assert all(_part_data(ev)["tool"] == "bash" for ev in tool_updates)
     assert all(_part_data(ev)["call_id"] == "call-1" for ev in tool_updates)
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_non_json_tool_output_delta_payloads_as_data_parts() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-output",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": (
+                        "black...................................................................."
+                    ),
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-output",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": "Passed\n",
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-output", context_id="ctx-tool-output", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 2
+    assert all(_part_kind(event) == "data" for event in tool_updates)
+    assert all(_part_data(event)["kind"] == "output_delta" for event in tool_updates)
+    assert [_part_data(event)["output_delta"] for event in tool_updates] == [
+        "black....................................................................",
+        "Passed\n",
+    ]
+    assert all(_part_data(event)["tool"] == "bash" for event in tool_updates)
+    assert all(_part_data(event)["call_id"] == "call-1" for event in tool_updates)
+    assert all(_part_data(event)["source_method"] == "commandExecution" for event in tool_updates)
+
+
+@pytest.mark.asyncio
+async def test_streaming_preserves_repeated_identical_tool_output_deltas() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-repeat",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": ".",
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-repeat", context_id="ctx-tool-repeat", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 3
+    assert [_part_data(event)["output_delta"] for event in tool_updates] == [".", ".", "."]
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_file_change_output_delta_payloads_as_data_parts() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-file-change",
+                call_id="call-file-1",
+                tool="apply_patch",
+                source_method="fileChange",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "fileChange",
+                    "call_id": "call-file-1",
+                    "tool": "apply_patch",
+                    "output_delta": "Updated src/app.py\n",
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-file-change", context_id="ctx-file-change", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 1
+    assert _part_data(tool_updates[0]) == {
+        "kind": "output_delta",
+        "source_method": "fileChange",
+        "call_id": "call-file-1",
+        "tool": "apply_patch",
+        "output_delta": "Updated src/app.py\n",
+    }
+
+
+@pytest.mark.asyncio
+async def test_streaming_replays_real_command_execution_fixture_end_to_end() -> None:
+    fixture, normalized_events = await replay_codex_notification_fixture(
+        "codex_app_server",
+        "command_execution_output_delta.json",
+    )
+    client = DummyStreamingClient(
+        stream_events_payload=normalized_events,
+        response_text=fixture["response_text"],
+        response_message_id=_fixture_response_message_id(fixture),
+    )
+    fixture_session_id = _fixture_session_id(fixture)
+
+    async def create_fixture_session(
+        title: str | None = None,
+        *,
+        directory: str | None = None,
+    ) -> str:
+        del title, directory
+        return fixture_session_id
+
+    client.create_session = create_fixture_session  # type: ignore[method-assign]
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-tool-fixture-command",
+            context_id="ctx-tool-fixture-command",
+            text="go",
+        ),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 4
+    assert [_part_data(event)["kind"] for event in tool_updates] == [
+        "state",
+        "output_delta",
+        "output_delta",
+        "state",
+    ]
+    assert [
+        _part_data(event)["status"] for event in tool_updates if "status" in _part_data(event)
+    ] == [
+        "running",
+        "completed",
+    ]
+    assert [
+        _part_data(event)["output_delta"]
+        for event in tool_updates
+        if _part_data(event)["kind"] == "output_delta"
+    ] == [
+        "chunk-1\n",
+        "chunk-2\n",
+    ]
+    assert all(_part_data(event)["source_method"] == "commandExecution" for event in tool_updates)
+    assert all(_part_data(event)["call_id"] == "call-fixture-command" for event in tool_updates)
+    assert _part_data(tool_updates[-1])["output"] == {
+        "text": "chunk-1\nchunk-2\n",
+        "exit_code": 0,
+        "duration_ms": 487,
+    }
+
+
+@pytest.mark.asyncio
+async def test_streaming_replays_real_file_change_fixture_end_to_end() -> None:
+    fixture, normalized_events = await replay_codex_notification_fixture(
+        "codex_app_server",
+        "file_change_output_delta.json",
+    )
+    client = DummyStreamingClient(
+        stream_events_payload=normalized_events,
+        response_text=fixture["response_text"],
+        response_message_id=_fixture_response_message_id(fixture),
+    )
+    fixture_session_id = _fixture_session_id(fixture)
+
+    async def create_fixture_session(
+        title: str | None = None,
+        *,
+        directory: str | None = None,
+    ) -> str:
+        del title, directory
+        return fixture_session_id
+
+    client.create_session = create_fixture_session  # type: ignore[method-assign]
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-tool-fixture-file-change",
+            context_id="ctx-tool-fixture-file-change",
+            text="go",
+        ),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 3
+    assert [_part_data(event)["kind"] for event in tool_updates] == [
+        "state",
+        "output_delta",
+        "state",
+    ]
+    assert _part_data(tool_updates[0]) == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "status": "running",
+        "input": {
+            "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+            "change_count": 1,
+        },
+    }
+    assert _part_data(tool_updates[1]) == {
+        "kind": "output_delta",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "output_delta": "Success. Updated the following files:\nA fixture-from-codex.txt\n",
+    }
+    assert _part_data(tool_updates[2]) == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "status": "completed",
+        "input": {
+            "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+            "change_count": 1,
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -927,26 +1321,34 @@ async def test_streaming_aggregates_small_text_deltas_into_single_update() -> No
 
 
 @pytest.mark.asyncio
-async def test_streaming_emits_tool_call_delta_events_as_data_parts() -> None:
+async def test_streaming_emits_structured_tool_call_delta_payloads_as_data_parts() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
-            _event(
+            _tool_call_update_event(
                 session_id="ses-1",
-                role="assistant",
-                part_type="tool_call",
-                delta="",
                 part_id="prt-tool-delta",
-                text="",
+                call_id="call-1",
+                tool="bash",
+                status="running",
+                payload={
+                    "kind": "state",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                },
             ),
-            _delta_event(
+            _tool_call_update_event(
                 session_id="ses-1",
                 part_id="prt-tool-delta",
-                delta='{"tool":"bash","status":"running"}',
-            ),
-            _delta_event(
-                session_id="ses-1",
-                part_id="prt-tool-delta",
-                delta='{"tool":"bash","status":"completed"}',
+                call_id="call-1",
+                tool="bash",
+                status="completed",
+                payload={
+                    "kind": "state",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "completed",
+                },
             ),
         ],
         response_text="answer",
@@ -967,8 +1369,156 @@ async def test_streaming_emits_tool_call_delta_events_as_data_parts() -> None:
     ]
     assert len(tool_updates) == 2
     assert all(_part_kind(event) == "data" for event in tool_updates)
+    assert all(_part_data(event)["kind"] == "state" for event in tool_updates)
     assert [_part_data(event)["status"] for event in tool_updates] == ["running", "completed"]
     assert all(_part_data(event)["tool"] == "bash" for event in tool_updates)
+    assert all(_part_data(event)["call_id"] == "call-1" for event in tool_updates)
+
+
+@pytest.mark.asyncio
+async def test_streaming_suppresses_legacy_string_tool_call_deltas() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool_call",
+                delta="",
+                part_id="prt-tool-legacy",
+                text="",
+            ),
+            _delta_event(
+                session_id="ses-1",
+                part_id="prt-tool-legacy",
+                delta='{"tool":"bash","status":"running"}',
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-legacy", context_id="ctx-tool-legacy", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert tool_updates == []
+
+
+@pytest.mark.asyncio
+async def test_streaming_interleaves_tool_state_and_output_delta_updates() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool",
+                delta="",
+                part_id="prt-tool-mixed",
+                part_overrides={
+                    "callID": "call-1",
+                    "tool": "bash",
+                    "state": {"status": "pending"},
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-mixed",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": "pytest ... ",
+                },
+            ),
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool",
+                delta="",
+                part_id="prt-tool-mixed",
+                part_overrides={
+                    "callID": "call-1",
+                    "tool": "bash",
+                    "state": {"status": "running"},
+                },
+            ),
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-mixed",
+                call_id="call-1",
+                tool="bash",
+                source_method="commandExecution",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": "Passed\n",
+                },
+            ),
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool",
+                delta="",
+                part_id="prt-tool-mixed",
+                part_overrides={
+                    "callID": "call-1",
+                    "tool": "bash",
+                    "state": {"status": "completed"},
+                },
+            ),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-tool-mixed", context_id="ctx-tool-mixed", text="go"),
+        queue,
+    )
+
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 5
+    assert [_part_data(event)["kind"] for event in tool_updates] == [
+        "state",
+        "output_delta",
+        "state",
+        "output_delta",
+        "state",
+    ]
+    assert [
+        _part_data(event).get("status")
+        for event in tool_updates
+        if _part_data(event)["kind"] == "state"
+    ] == ["pending", "running", "completed"]
+    assert [
+        _part_data(event).get("output_delta")
+        for event in tool_updates
+        if _part_data(event)["kind"] == "output_delta"
+    ] == ["pytest ... ", "Passed\n"]
 
 
 @pytest.mark.asyncio

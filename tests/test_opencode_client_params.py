@@ -10,7 +10,7 @@ from codex_a2a_serve.codex_client import (
     OpencodeClient,
     _PendingInterruptRequest,
 )
-from tests.helpers import make_settings
+from tests.helpers import make_settings, replay_codex_notification_fixture
 
 
 @pytest.mark.asyncio
@@ -164,6 +164,316 @@ async def test_stream_events_broadcasts_to_all_consumers() -> None:
 
     assert seen_1 == [payload]
     assert seen_2 == [payload]
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_normalizes_tool_output_delta_payload() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_notification(
+        {
+            "method": "item/commandExecution/outputDelta",
+            "params": {
+                "threadId": "thr-1",
+                "itemId": "msg-1",
+                "callID": "call-1",
+                "tool": "bash",
+                "state": {"status": "running"},
+                "delta": "Passed\n",
+            },
+        }
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["type"] == "message.part.updated"
+    assert event["properties"]["part"] == {
+        "sessionID": "thr-1",
+        "messageID": "msg-1",
+        "id": "msg-1",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-1",
+        "tool": "bash",
+        "state": {"status": "running"},
+        "sourceMethod": "commandExecution",
+    }
+    assert event["properties"]["delta"] == {
+        "kind": "output_delta",
+        "source_method": "commandExecution",
+        "call_id": "call-1",
+        "tool": "bash",
+        "status": "running",
+        "output_delta": "Passed\n",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_normalizes_file_change_output_delta_payload() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_notification(
+        {
+            "method": "item/fileChange/outputDelta",
+            "params": {
+                "threadId": "thr-1",
+                "callID": "call-file-1",
+                "tool": "apply_patch",
+                "delta": "Updated src/app.py\n",
+            },
+        }
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["type"] == "message.part.updated"
+    assert event["properties"]["part"] == {
+        "sessionID": "thr-1",
+        "id": "call-file-1",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-file-1",
+        "tool": "apply_patch",
+        "sourceMethod": "fileChange",
+    }
+    assert event["properties"]["delta"] == {
+        "kind": "output_delta",
+        "source_method": "fileChange",
+        "call_id": "call-file-1",
+        "tool": "apply_patch",
+        "output_delta": "Updated src/app.py\n",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_normalizes_command_execution_started_state() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_notification(
+        {
+            "method": "item/started",
+            "params": {
+                "threadId": "thr-1",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "call-1",
+                    "status": "inProgress",
+                    "command": "/bin/bash -lc pytest",
+                    "cwd": "/workspace",
+                },
+            },
+        }
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["properties"]["part"] == {
+        "sessionID": "thr-1",
+        "messageID": "call-1",
+        "id": "call-1",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-1",
+        "sourceMethod": "commandExecution",
+        "state": {
+            "status": "running",
+            "input": {
+                "command": "/bin/bash -lc pytest",
+                "cwd": "/workspace",
+            },
+        },
+    }
+    assert event["properties"]["delta"] == {
+        "kind": "state",
+        "source_method": "commandExecution",
+        "call_id": "call-1",
+        "status": "running",
+        "input": {
+            "command": "/bin/bash -lc pytest",
+            "cwd": "/workspace",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_normalizes_file_change_completed_state() -> None:
+    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_notification(
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1",
+                "item": {
+                    "type": "fileChange",
+                    "id": "call-file-1",
+                    "status": "completed",
+                    "changes": [
+                        {"path": "/workspace/src/app.py", "kind": {"type": "edit"}},
+                    ],
+                },
+            },
+        }
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["properties"]["part"] == {
+        "sessionID": "thr-1",
+        "messageID": "call-file-1",
+        "id": "call-file-1",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-file-1",
+        "sourceMethod": "fileChange",
+        "state": {
+            "status": "completed",
+            "input": {
+                "paths": ["/workspace/src/app.py"],
+                "change_count": 1,
+            },
+        },
+    }
+    assert event["properties"]["delta"] == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-file-1",
+        "status": "completed",
+        "input": {
+            "paths": ["/workspace/src/app.py"],
+            "change_count": 1,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_replays_real_command_execution_fixture() -> None:
+    fixture, events = await replay_codex_notification_fixture(
+        "codex_app_server",
+        "command_execution_output_delta.json",
+    )
+    tool_events = [event for event in events if event["properties"]["part"]["type"] == "tool_call"]
+    expected_command = (
+        '/bin/bash -lc "python3 -c \\"import sys,time; '
+        "[print(f'chunk-{i}', flush=True) or time.sleep(0.2) for i in range(3)]"
+        '\\""'
+    )
+
+    assert fixture["response_text"] == "DONE"
+    assert [event["type"] for event in tool_events] == [
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+    ]
+    assert tool_events[0]["properties"]["part"] == {
+        "sessionID": "thr-fixture-command",
+        "messageID": "call-fixture-command",
+        "id": "call-fixture-command",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-fixture-command",
+        "sourceMethod": "commandExecution",
+        "state": {
+            "status": "running",
+            "input": {
+                "command": expected_command,
+                "cwd": "/tmp/codex-a2a-command-fixture",
+            },
+        },
+    }
+    assert tool_events[0]["properties"]["delta"]["kind"] == "state"
+    assert [event["properties"]["delta"]["output_delta"] for event in tool_events[1:3]] == [
+        "chunk-1\n",
+        "chunk-2\n",
+    ]
+    assert tool_events[3]["properties"]["delta"] == {
+        "kind": "state",
+        "source_method": "commandExecution",
+        "call_id": "call-fixture-command",
+        "status": "completed",
+        "input": {
+            "command": expected_command,
+            "cwd": "/tmp/codex-a2a-command-fixture",
+        },
+        "output": {
+            "text": "chunk-1\nchunk-2\n",
+            "exit_code": 0,
+            "duration_ms": 487,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_notification_replays_real_file_change_fixture() -> None:
+    fixture, events = await replay_codex_notification_fixture(
+        "codex_app_server",
+        "file_change_output_delta.json",
+    )
+    tool_events = [event for event in events if event["properties"]["part"]["type"] == "tool_call"]
+
+    assert fixture["response_text"] == "DONE"
+    assert [event["type"] for event in tool_events] == [
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+    ]
+    assert tool_events[0]["properties"]["part"] == {
+        "sessionID": "thr-fixture-file-change",
+        "messageID": "call-fixture-file-change",
+        "id": "call-fixture-file-change",
+        "type": "tool_call",
+        "role": "assistant",
+        "callID": "call-fixture-file-change",
+        "sourceMethod": "fileChange",
+        "state": {
+            "status": "running",
+            "input": {
+                "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+                "change_count": 1,
+            },
+        },
+    }
+    assert tool_events[1]["properties"]["delta"] == {
+        "kind": "output_delta",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "output_delta": "Success. Updated the following files:\nA fixture-from-codex.txt\n",
+    }
+    assert tool_events[2]["properties"]["delta"] == {
+        "kind": "state",
+        "source_method": "fileChange",
+        "call_id": "call-fixture-file-change",
+        "status": "completed",
+        "input": {
+            "paths": ["/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt"],
+            "change_count": 1,
+        },
+    }
 
 
 @pytest.mark.asyncio

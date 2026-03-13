@@ -108,8 +108,14 @@ Compatibility note:
   out-of-order deltas are buffered and replayed when the corresponding
   `part.updated` arrives. `text` and `reasoning` chunks are emitted as
   `TextPart`, while `tool_call` chunks are emitted as `DataPart` with a
-  normalized structured payload (for example `tool`, `call_id`, `status`,
-  `input`, `output`, `error`). To avoid character-level event floods, the
+  normalized structured payload. Tool payloads use `kind` to distinguish
+  structured state updates from plain tool output text:
+  `kind=state` carries fields such as `tool`, `call_id`, `status`, `input`,
+  `output`, and `error`; `kind=output_delta` carries the raw text increment in
+  `output_delta` and may also include `source_method`, `tool`, `call_id`, and
+  `status`. Legacy stringified JSON tool payloads are rejected; the stream
+  contract only accepts structured `DataPart(data={...})` payloads. To avoid
+  character-level event floods, the
   service performs light server-side aggregation before emitting `text` and
   `reasoning` updates: `text` flushes at `120 chars or 200ms`, `reasoning`
   flushes at `240 chars or 350ms`, and both flush immediately on block
@@ -128,6 +134,26 @@ Compatibility note:
   resolved events are suppressed by `request_id`. Provider-private raw
   interrupt payload is preserved under `metadata.codex.interrupt`.
   Non-streaming requests return a `Task` directly.
+- `tool_call` payload contract:
+
+| `kind` | Required fields | Optional fields | Notes |
+| --- | --- | --- | --- |
+| `state` | `kind` | `source_method`, `call_id`, `tool`, `status`, `title`, `subtitle`, `input`, `output`, `error` | Used for structured tool state snapshots. A payload that contains only `kind=state` is invalid and is suppressed. |
+| `output_delta` | `kind`, `output_delta` | `source_method`, `call_id`, `tool`, `status` | Used for raw tool output text increments. `output_delta` is preserved verbatim and may contain spaces or trailing newlines. |
+
+  `codex app-server` lifecycle events such as `item/started` and
+  `item/completed` are normalized into `kind=state`; `item/*/outputDelta`
+  notifications are normalized into `kind=output_delta`.
+
+  Examples:
+
+  ```json
+  {"kind":"state","tool":"bash","call_id":"call-1","status":"running"}
+  ```
+
+  ```json
+  {"kind":"output_delta","source_method":"commandExecution","tool":"bash","call_id":"call-1","status":"running","output_delta":"Passed\n"}
+  ```
 - Non-streaming `message:send` responses may include normalized token usage at
   `Task.metadata.shared.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is

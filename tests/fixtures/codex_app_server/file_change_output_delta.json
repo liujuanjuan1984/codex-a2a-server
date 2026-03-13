@@ -1,0 +1,103 @@
+{
+  "source": "Recorded from codex app-server 0.114.0 and sanitized for stable replay.",
+  "response_text": "DONE",
+  "notifications": [
+    {
+      "method": "turn/started",
+      "params": {
+        "threadId": "thr-fixture-file-change",
+        "turn": {
+          "id": "turn-fixture-file-change",
+          "items": [],
+          "status": "inProgress",
+          "error": null
+        }
+      }
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "item": {
+          "type": "fileChange",
+          "id": "call-fixture-file-change",
+          "changes": [
+            {
+              "path": "/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt",
+              "kind": {
+                "type": "add"
+              },
+              "diff": "fixture-from-codex\n"
+            }
+          ],
+          "status": "inProgress"
+        },
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change"
+      }
+    },
+    {
+      "method": "item/fileChange/outputDelta",
+      "params": {
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change",
+        "itemId": "call-fixture-file-change",
+        "delta": "Success. Updated the following files:\nA fixture-from-codex.txt\n"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "fileChange",
+          "id": "call-fixture-file-change",
+          "changes": [
+            {
+              "path": "/tmp/codex-a2a-file-change-fixture/fixture-from-codex.txt",
+              "kind": {
+                "type": "add"
+              },
+              "diff": "fixture-from-codex\n"
+            }
+          ],
+          "status": "completed"
+        },
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change"
+      }
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "item": {
+          "type": "agentMessage",
+          "id": "msg-fixture-file-change",
+          "text": "",
+          "phase": null
+        },
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change"
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "thr-fixture-file-change",
+        "turnId": "turn-fixture-file-change",
+        "itemId": "msg-fixture-file-change",
+        "delta": "DONE"
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thr-fixture-file-change",
+        "turn": {
+          "id": "turn-fixture-file-change",
+          "items": [],
+          "status": "completed",
+          "error": null
+        }
+      }
+    }
+  ]
+}
