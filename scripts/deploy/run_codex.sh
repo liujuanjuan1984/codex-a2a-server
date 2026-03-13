@@ -44,9 +44,7 @@ if [[ -z "${CODEX_CONFIG_CONTENT:-}" ]]; then
     '{"$schema":"https://codex.ai/config.json","lsp":%s}' \
     "$lsp_json"
 fi
-
-# Upstream Codex SDK/runtime still consumes OPENCODE_CONFIG_CONTENT.
-export OPENCODE_CONFIG_CONTENT="$CODEX_CONFIG_CONTENT"
+export CODEX_CONFIG_CONTENT
 
 cmd=("$CODEX_BIN" serve --log-level "$CODEX_LOG_LEVEL" --print-logs)
 

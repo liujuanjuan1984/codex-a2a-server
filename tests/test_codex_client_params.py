@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from codex_a2a_server.codex_client import (
-    InterruptRequestBinding,
     CodexClient,
+    InterruptRequestBinding,
     _PendingInterruptRequest,
 )
 from tests.helpers import make_settings, replay_codex_notification_fixture

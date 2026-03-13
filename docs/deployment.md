@@ -278,7 +278,7 @@ Naming rule in the tables below:
 | `CODEX_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |
 | `CODEX_LOG_LEVEL` | - | Optional | `DEBUG` | Codex log level. |
 | `CODEX_EXTRA_ARGS` | - | Optional | empty | Extra Codex startup args. |
-| `CODEX_CONFIG_CONTENT` | - | Optional | empty | Wrapper-level Codex config JSON; `run_codex.sh` forwards it to upstream `OPENCODE_CONFIG_CONTENT`. |
+| `CODEX_CONFIG_CONTENT` | - | Optional | empty | Wrapper-level Codex config JSON passed directly to the Codex launcher. |
 | `CODEX_PROVIDER_ID` | `codex_provider_id` | Optional | None | Written to `a2a.env`. |
 | `CODEX_MODEL_ID` | `codex_model_id` | Optional | None | Written to `a2a.env`. |
 | `CODEX_LSP` | `codex_lsp` | Optional | `false` | Global Codex LSP switch for deployed instance. Wrapper derives default `CODEX_CONFIG_CONTENT` from this value when `CODEX_CONFIG_CONTENT` is unset. |

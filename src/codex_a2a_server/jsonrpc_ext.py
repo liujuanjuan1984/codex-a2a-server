@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .codex_client import InterruptRequestBinding, InterruptRequestError, CodexClient
+from .codex_client import CodexClient, InterruptRequestBinding, InterruptRequestError
 from .extension_contracts import (
     COMMAND_ALLOWED_FIELDS,
     PROMPT_ASYNC_ALLOWED_FIELDS,
