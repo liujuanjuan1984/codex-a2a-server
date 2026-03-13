@@ -1,238 +1,154 @@
 # codex-a2a-serve
 
-> **Turning Codex into a production-ready, stateful Agent API with REST/JSON-RPC endpoints, authentication, streaming, and session management.**
->
-> **Tech Stack:** Python 3.11+ | FastAPI | A2A SDK | `uv` | `pytest`
+> Turn Codex into a stateful, production-oriented A2A agent service.
 
-`codex-a2a-serve` is an adapter layer that exposes Codex as an A2A service (FastAPI + A2A SDK). It provides:
+`codex-a2a-serve` exposes Codex through standard A2A interfaces and adds the
+operational pieces that raw agent runtimes usually do not provide by default:
+authentication, session continuity, streaming contracts, interrupt handling,
+deployment tooling, and documentation for running it as a service.
 
-- A2A HTTP+JSON (REST): `/v1/message:send`, `/v1/message:stream`,
-  `GET /v1/tasks/{task_id}:subscribe`, and related endpoints
-- A2A JSON-RPC: `POST /` (for standard methods and extensions such as session queries)
+## Why This Project Exists
 
-In practice, this service is a protocol bridge and security boundary: it maps A2A message/task semantics to Codex app-server JSON-RPC APIs, while adding authentication, observability, and session-continuation contracts.
+Most coding agents are built first as interactive tools, not as reusable
+service endpoints. This project turns Codex into an agent service that can be
+embedded into applications, gateways, and orchestration systems without
+forcing each consumer to re-implement transport bridging, auth, or runtime
+operations.
 
-> Important: `A2A_BEARER_TOKEN` is required for startup.
-> See `docs/guide.md`.
+In practice, `codex-a2a-serve` acts as:
 
-## Security Boundary (Read First)
+- a protocol bridge from A2A to Codex
+- a security and deployment boundary around the Codex runtime
+- a stable contract layer for session, streaming, and interrupt behaviors
 
-- In the current architecture, the `codex` process must read LLM provider API
-  credentials (for example `GOOGLE_GENERATIVE_AI_API_KEY`).
-- Because of that, an `codex agent` may leak sensitive environment values
-  through prompt injection or indirect exfiltration patterns.
-- Do not treat this deployment model as a hard guarantee that provider keys are
-  inaccessible to agent behavior.
-- This project is best suited for trusted/internal environments until a stronger
-  token isolation model is implemented (for example tenant isolation, hosted
-  proxy credentials, auditing, and rotation/revocation strategy).
-- Within one `codex-a2a-serve` instance, all consumers operate on the same
-  underlying Codex workspace/environment. It is not tenant-isolated by
-  default.
+## Vision
 
-Additional notes:
+Build a reusable adapter layer that lets coding agents behave like service
+infrastructure rather than local-only tools:
 
-- The A2A layer enforces bearer-token authentication via `A2A_BEARER_TOKEN`.
-- When `A2A_LOG_PAYLOADS=true`, payload logs may include request/response
-  bodies, but only for JSON payloads that pass content-type / size checks. For
-  `codex.*` JSON-RPC extensions, request/response body logging is intentionally
-  suppressed to reduce chat-history and control-parameter exposure risk.
-- In systemd deployment mode, secret persistence is opt-in. Deploy scripts do
-  not write `GH_TOKEN`, `A2A_BEARER_TOKEN`, or provider keys to disk unless
-  `ENABLE_SECRET_PERSISTENCE=true` is explicitly set.
-- Deployment-side LLM provider coverage and known gaps are documented in
-  `docs/deployment.md` (`Current Provider Coverage and Gaps`).
-- For threat model and disclosure guidance, see `SECURITY.md`.
+- standard transport contracts instead of provider-specific glue
+- explicit runtime boundaries instead of ad-hoc shell wrappers
+- production-friendly deployment and observability instead of demo-only setups
 
-## Capabilities
+## What It Already Provides
 
-- Standard A2A chat: forwards `message:send` / `message:stream` to Codex.
-- SSE streaming: `/v1/message:stream` emits incremental updates and then
-  closes with `TaskStatusUpdateEvent(final=true)`. For detailed streaming
-  contract and event semantics, see `docs/guide.md`.
-- Token usage passthrough: normalized usage/cost stats are exposed at
-  `metadata.shared.usage` (stream final status and non-streaming task metadata).
-- Interrupt callback passthrough: when Codex emits `permission.asked` /
-  `question.asked`, stream status events include `metadata.shared.interrupt`
-  while provider-private raw details remain under `metadata.codex.interrupt`.
-- Re-subscribe after disconnect: `GET /v1/tasks/{task_id}:subscribe`
-  (available while the task is not in a terminal state).
-- Session continuation contract: clients can explicitly bind to an existing
-  Codex session via `metadata.shared.session.id`.
-- Codex session query extension (JSON-RPC):
-  `codex.sessions.list` / `codex.sessions.messages.list`.
+- A2A HTTP+JSON and JSON-RPC entrypoints for Codex
+- SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
+- session continuation and session query extensions
+- interrupt lifecycle mapping and callback validation
+- bearer-token auth, payload logging controls, and secret-handling guardrails
+- systemd multi-instance deployment and lightweight local deployment
 
-## Transport Notes
+## Logical Components
 
-- The service keeps dual-stack transport support: HTTP+JSON (REST routes) and JSON-RPC (`POST /`).
-- Agent Card sets `preferredTransport=HTTP+JSON` and still declares JSON-RPC via `additionalInterfaces`.
-- Request payloads are transport-specific and must not be mixed:
-  - REST (`/v1/message:send`): typically `message.content` with role values like `ROLE_USER`
-  - JSON-RPC (`method=message/send`): `params.message.parts` with role values `user` / `agent`
+```mermaid
+flowchart TD
+    A["A2A client"] --> B["FastAPI transport layer"]
+    B --> C["A2A task/message mapping"]
+    C --> D["Codex client adapter"]
+    D --> E["Codex app-server / CLI"]
+
+    B --> F["Auth and request logging"]
+    C --> G["Shared contract normalization"]
+    G --> H["Streaming blocks"]
+    G --> I["Session continuity"]
+    G --> J["Interrupt lifecycle"]
+```
+
+This repository does not change what Codex fundamentally is. It wraps Codex in
+a service layer that makes the runtime consumable through stable agent-facing
+contracts.
+
+More detail: [Architecture Guide](docs/architecture.md)
+
+## Current Progress
+
+The project already has a usable service baseline for internal or controlled
+deployments:
+
+- core A2A send/stream flows are implemented
+- streaming contracts are normalized around shared metadata
+- interrupt ask/resolve lifecycle is surfaced explicitly
+- session continuity is available through shared metadata and JSON-RPC queries
+- deployment scripts cover both long-running systemd instances and lightweight
+  current-user startup
+- security baseline now includes `SECURITY.md`, secret scanning, and safer
+  deployment defaults
+
+## Security Model
+
+This project improves the service boundary around Codex, but it is not a hard
+multi-tenant isolation layer.
+
+- the underlying Codex runtime may still need provider credentials
+- one instance is not tenant-isolated by default
+- deploy scripts default to not persisting secrets unless explicitly opted in
+
+Read before deployment:
+
+- [SECURITY.md](SECURITY.md)
+- [Deployment Guide](docs/deployment.md)
+
+## Recommended Client Side
+
+If you want a client-side integration layer to consume this service, prefer
+[a2a-client-hub](https://github.com/liujuanjuan1984/a2a-client-hub).
+
+It is a better place for client concerns such as A2A consumption, upstream
+adapter normalization, and application-facing integration, while
+`codex-a2a-serve` stays focused on the server/runtime boundary around Codex.
 
 ## Quick Start
 
-1. Ensure Codex CLI is available (`codex` in `PATH`), or set `CODEX_CLI_BIN`:
-
-```bash
-codex --version
-```
-
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 uv sync --all-extras
 ```
 
-3. Start A2A service:
+2. Generate a temporary local bearer token:
 
 ```bash
-A2A_BEARER_TOKEN=dev-token uv run codex-a2a-serve
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
 ```
 
-Default listen address: `http://127.0.0.1:8000`
-
-A2A Agent Card: `http://127.0.0.1:8000/.well-known/agent-card.json`
-
-Minimal request example:
+3. Start the service:
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "message": {
-      "messageId": "msg-1",
-      "role": "ROLE_USER",
-      "content": [{"text": "Explain what this repository does."}]
-    }
-  }'
+uv run codex-a2a-serve
 ```
 
-## Key Configuration
+4. Open the Agent Card:
 
-For full configuration, see `docs/guide.md`. Most commonly used options:
+- `http://127.0.0.1:8000/.well-known/agent-card.json`
 
-- `CODEX_CLI_BIN`: Codex CLI binary path (default: `codex`)
-- `CODEX_APP_SERVER_LISTEN`: Codex app-server transport (default: `stdio://`)
-- `CODEX_MODEL`: default model for `thread/start` (default: `gpt-5.1-codex`)
-- `CODEX_MODEL_ID`: optional per-turn model override for `turn/start`
-- `CODEX_DIRECTORY`: default `cwd` (optional). Clients may pass
-  `metadata.codex.directory` only when `A2A_ALLOW_DIRECTORY_OVERRIDE=true`
-  and the path stays inside the allowed workspace.
-- `CODEX_TIMEOUT_STREAM`: optional timeout for streaming send path.
-  Unset means no explicit stream timeout (the turn waits until completion).
-- `A2A_BEARER_TOKEN`: required bearer token for authentication
-- `A2A_PUBLIC_URL`: externally reachable URL prefix exposed in Agent Card
-- `A2A_PROJECT`: optional project label injected into Agent Card metadata/examples
-- `A2A_STREAMING`: enables SSE streaming (default: `true`)
-- `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`:
-  in-memory `(identity, contextId) -> session_id` mapping cache settings
+For configuration, transport examples, and protocol details, use the dedicated
+docs instead of the root README.
 
-Compatibility note:
-- Legacy `OPENCODE_*` env keys are still accepted as fallback aliases.
+## Documentation Map
 
-## Session Continuation Contract
+- [Architecture Guide](docs/architecture.md)
+  System structure, boundaries, and request flow.
+- [Usage Guide](docs/guide.md)
+  Configuration, API contracts, client examples, streaming/session/interrupt
+  details.
+- [Deployment Guide](docs/deployment.md)
+  systemd deployment, lightweight deployment, runtime secret strategy, and
+  operations guidance.
+- [Script Guide](scripts/README.md)
+  Entry points for init, deploy, local start, and uninstall scripts.
+- [Security Policy](SECURITY.md)
+  Threat model, deployment caveats, and vulnerability disclosure guidance.
 
-To continue an existing Codex conversation, pass this metadata key on every invoke request:
+## Development
 
-- `metadata.shared.session.id`: target Codex session ID (for example
-  `ses_xxx`)
-
-Server behavior:
-
-- If provided, the server sends the message to the specified session.
-- If omitted, the server creates a new session and caches
-  `(identity, contextId) -> session_id` with TTL and max-size bounds.
-
-Example:
-
-```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "message": {
-      "messageId": "msg-continue-1",
-      "role": "ROLE_USER",
-      "content": [{"text": "Continue our previous conversation and summarize the last conclusion."}]
-    },
-    "metadata": {
-      "shared": {
-        "session": {
-          "id": "<session_id>"
-        }
-      }
-    }
-  }'
-```
-
-## Codex Session Query (A2A Extension via JSON-RPC)
-
-The service exposes Codex session list/history queries through A2A extension methods on the JSON-RPC endpoint (`POST /`), without introducing custom REST endpoints.
-
-- Auth: same `Authorization: Bearer <token>`
-- Result: `result.items` always contains A2A standard objects
-  (Task for session list, Message for history)
-- Shared session metadata is exposed at `metadata.shared.session`
-- Codex raw records are preserved in `metadata.codex.raw`
-- Interrupt callback methods:
-  - `a2a.interrupt.permission.reply`
-  - `a2a.interrupt.question.reply`
-  - `a2a.interrupt.question.reject`
-
-List sessions (`codex.sessions.list`):
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "codex.sessions.list",
-    "params": {"limit": 20}
-  }'
-```
-
-List messages in a session (`codex.sessions.messages.list`):
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "codex.sessions.messages.list",
-    "params": {
-      "session_id": "<session_id>",
-      "limit": 50
-    }
-  }'
-```
-
-## Documentation
-
-- Script entry guide (init/deploy/local/uninstall):
-  [`scripts/README.md`](scripts/README.md)
-- Usage guide (configuration, auth, streaming, client examples):
-  [`docs/guide.md`](docs/guide.md)
-- Systemd multi-instance deployment details:
-  [`docs/deployment.md`](docs/deployment.md)
-- Security policy and threat model:
-  [`SECURITY.md`](SECURITY.md)
-
-## License
-
-This project is licensed under the Apache License 2.0.
-See [`LICENSE`](LICENSE).
-
-## Development & Validation
-
-CI (`.github/workflows/ci.yml`) runs the same baseline checks on PRs and `main` pushes.
+Baseline validation:
 
 ```bash
 uv run pre-commit run --all-files
 uv run pytest
 ```
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

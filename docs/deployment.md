@@ -2,6 +2,10 @@
 
 This guide explains how to deploy Codex + A2A as isolated per-project instances (two processes per project) on one host while sharing core runtime artifacts.
 
+For project overview and architecture positioning, use [README.md](../README.md)
+and [Architecture Guide](architecture.md). This document is only for deployment,
+runtime secret handling, and operational setup.
+
 ## Prerequisites
 
 - `sudo` access (required for systemd units, users, and directories).

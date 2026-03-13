@@ -2,8 +2,13 @@
 
 Executable scripts live here. This file is the primary script-entry guide.
 
+This document only explains script entrypoints. It does not repeat project
+overview, runtime contracts, or deployment rationale in detail.
+
 ## Start Here
 
+- [Project overview](../README.md)
+- [Architecture guide](../docs/architecture.md)
 - [Usage guide](../docs/guide.md)
 - [Deployment guide](../docs/deployment.md)
 

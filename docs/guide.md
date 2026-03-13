@@ -1,6 +1,11 @@
 # Usage Guide
 
-This guide covers configuration, authentication, API behavior, streaming re-subscription, and A2A client usage examples.
+This guide is the technical reference for day-to-day integration. It focuses on
+runtime configuration, transport contracts, streaming/session/interrupt
+behavior, and client examples.
+
+If you are looking for project value, architecture, or documentation entry
+navigation, start from [README.md](../README.md) instead.
 
 ## Transport Contracts
 
@@ -115,6 +120,21 @@ Compatibility note:
 - Agent Card declares OAuth2 only when both
   `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
 
+## Authentication Setup For Local Examples
+
+For local development examples, prefer generating a temporary token once and
+reusing the exported environment variable in the following commands:
+
+```bash
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+```
+
+Then reference the token in request examples as:
+
+```bash
+-H "Authorization: Bearer ${A2A_BEARER_TOKEN}"
+```
+
 ## Session Continuation Contract
 
 To continue a historical Codex session, include this metadata key in each invoke request:
@@ -132,7 +152,7 @@ Minimal example:
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "message": {
       "messageId": "msg-continue-1",
@@ -172,7 +192,7 @@ This service exposes Codex session list and message-history queries via A2A JSON
 ```bash
 curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -186,7 +206,7 @@ curl -sS http://127.0.0.1:8000/ \
 ```bash
 curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "jsonrpc": "2.0",
     "id": 2,
@@ -222,7 +242,7 @@ Permission reply example:
 ```bash
 curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "jsonrpc": "2.0",
     "id": 3,
@@ -239,7 +259,7 @@ curl -sS http://127.0.0.1:8000/ \
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "message": {
       "messageId": "msg-1",
@@ -254,7 +274,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 ```bash
 curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
+  -H "Authorization: Bearer ${A2A_BEARER_TOKEN}" \
   -d '{
     "jsonrpc": "2.0",
     "id": 101,
