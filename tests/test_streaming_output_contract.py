@@ -3,9 +3,9 @@ import asyncio
 import pytest
 from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
-from codex_a2a_serve.codex_client import OpencodeMessage
-from codex_a2a_serve.streaming import extract_interrupt_resolved_event
+from codex_a2a_server.agent import CodexAgentExecutor
+from codex_a2a_server.codex_client import CodexMessage
+from codex_a2a_server.streaming import extract_interrupt_resolved_event
 from tests.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -57,13 +57,13 @@ class DummyStreamingClient:
         *,
         directory: str | None = None,
         timeout_override=None,  # noqa: ANN001
-    ) -> OpencodeMessage:
+    ) -> CodexMessage:
         del text, directory, timeout_override
         self._in_flight_send += 1
         self.max_in_flight_send = max(self.max_in_flight_send, self._in_flight_send)
         await asyncio.sleep(self._send_delay)
         self._in_flight_send -= 1
-        return OpencodeMessage(
+        return CodexMessage(
             text=self._response_text,
             session_id=session_id,
             message_id=self._response_message_id,
@@ -320,7 +320,7 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
         ],
         response_text="final answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -361,7 +361,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
         ],
         response_text="stable final answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -387,7 +387,7 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
         ],
         response_text="final answer from send_message",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -415,7 +415,7 @@ async def test_execute_serializes_send_message_per_session() -> None:
         response_text="ok",
         send_delay=0.05,
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
     queue_1 = DummyEventQueue()
     queue_2 = DummyEventQueue()
     metadata = {"shared": {"session": {"id": "ses-shared"}}}
@@ -453,7 +453,7 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
         response_text="stream chunk without id",
         response_message_id=None,
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -505,7 +505,7 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
             }
         },
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -534,7 +534,7 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -578,7 +578,7 @@ async def test_streaming_emits_interrupt_resolved_status_once_per_pending_reques
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -629,7 +629,7 @@ async def test_streaming_emits_question_rejected_resolution_and_suppresses_unkno
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -705,7 +705,7 @@ async def test_streaming_treats_embedded_markers_as_plain_text_without_typed_par
         ],
         response_text='start <think>thinking</think> middle [tool_call: {"foo":1}] end',
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -773,7 +773,7 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
         ],
         response_text="done",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -833,7 +833,7 @@ async def test_streaming_emits_non_json_tool_output_delta_payloads_as_data_parts
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -914,7 +914,7 @@ async def test_streaming_preserves_repeated_identical_tool_output_deltas() -> No
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -953,7 +953,7 @@ async def test_streaming_emits_file_change_output_delta_payloads_as_data_parts()
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -999,7 +999,7 @@ async def test_streaming_replays_real_command_execution_fixture_end_to_end() -> 
         return fixture_session_id
 
     client.create_session = create_fixture_session  # type: ignore[method-assign]
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1069,7 +1069,7 @@ async def test_streaming_replays_real_file_change_fixture_end_to_end() -> None:
         return fixture_session_id
 
     client.create_session = create_fixture_session  # type: ignore[method-assign]
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1129,7 +1129,7 @@ async def test_streaming_flushes_partial_marker_on_eof_as_current_block_type() -
         ],
         response_text="hello <thin",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1179,7 +1179,7 @@ async def test_streaming_never_resets_single_artifact_after_first_chunk() -> Non
         ],
         response_text="HELLO",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1224,7 +1224,7 @@ async def test_streaming_suppresses_reasoning_snapshot_reset_after_delta() -> No
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1259,7 +1259,7 @@ async def test_streaming_supports_message_part_delta_events() -> None:
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1298,7 +1298,7 @@ async def test_streaming_aggregates_small_text_deltas_into_single_update() -> No
         ],
         response_text="你好，世界",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1353,7 +1353,7 @@ async def test_streaming_emits_structured_tool_call_delta_payloads_as_data_parts
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1395,7 +1395,7 @@ async def test_streaming_suppresses_legacy_string_tool_call_deltas() -> None:
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1487,7 +1487,7 @@ async def test_streaming_interleaves_tool_state_and_output_delta_updates() -> No
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1538,7 +1538,7 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
         ],
         response_text="answer",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1586,7 +1586,7 @@ async def test_streaming_flushes_reasoning_buffer_after_time_threshold() -> None
         response_text="answer",
         send_delay=0.6,
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
@@ -1633,7 +1633,7 @@ async def test_streaming_keeps_multiple_message_ids_in_same_request_window() -> 
         response_text="final answer",
         response_message_id="msg-b",
     )
-    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 

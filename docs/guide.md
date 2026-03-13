@@ -60,8 +60,8 @@ navigation, start from [README.md](../README.md) instead.
   `(identity, contextId) -> Codex session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
 
-Compatibility note:
-- Legacy `OPENCODE_*` keys are accepted as fallback aliases for the corresponding `CODEX_*` settings.
+Configuration note:
+- The service configuration layer only accepts `CODEX_*` names for Codex-facing settings.
 
 ## Lightweight Deploy Inheritance
 
@@ -158,7 +158,7 @@ Compatibility note:
   `Task.metadata.shared.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
-- Within one `codex-a2a-serve` instance, all consumers share the same
+- Within one `codex-a2a-server` instance, all consumers share the same
   underlying Codex workspace/environment. This deployment model is not
   tenant-isolated by default.
 - Error handling:

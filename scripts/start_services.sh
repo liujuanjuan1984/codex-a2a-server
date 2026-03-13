@@ -6,13 +6,13 @@ cd "$ROOT_DIR"
 
 A2A_PORT="${A2A_PORT:-8000}"
 A2A_HOST="${A2A_HOST:-127.0.0.1}"
-OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-DEBUG}"
+CODEX_LOG_LEVEL="${CODEX_LOG_LEVEL:-DEBUG}"
 A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
 LOG_ROOT="${LOG_ROOT:-${ROOT_DIR}/logs}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="${LOG_DIR:-${LOG_ROOT}/${TIMESTAMP}}"
 mkdir -p "$LOG_DIR"
-OPENCODE_LOG="${OPENCODE_LOG:-${LOG_DIR}/codex_serve.log}"
+CODEX_LOG="${CODEX_LOG:-${LOG_DIR}/codex_serve.log}"
 A2A_LOG="${A2A_LOG:-${LOG_DIR}/codex_a2a.log}"
 A2A_PUBLIC_URL="${A2A_PUBLIC_URL:-http://${A2A_HOST}:${A2A_PORT}}"
 
@@ -37,14 +37,14 @@ kill_existing() {
   fi
 }
 
-OPENCODE_CMD=""
+CODEX_CMD=""
 if command -v codex >/dev/null 2>&1; then
-  OPENCODE_CMD="codex"
+  CODEX_CMD="codex"
 elif [[ -x "$HOME/.codex/bin/codex" ]]; then
-  OPENCODE_CMD="$HOME/.codex/bin/codex"
+  CODEX_CMD="$HOME/.codex/bin/codex"
 fi
 
-if [[ -z "$OPENCODE_CMD" ]]; then
+if [[ -z "$CODEX_CMD" ]]; then
   echo "codex binary not found; install it first" >&2
   exit 1
 fi
@@ -54,32 +54,32 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-kill_existing "${OPENCODE_CMD} serve" "codex serve"
-kill_existing "uv run codex-a2a-serve" "codex-a2a-serve"
+kill_existing "${CODEX_CMD} serve" "codex serve"
+kill_existing "uv run codex-a2a-server" "codex-a2a-server"
 
 echo "Starting codex serve..."
-"$OPENCODE_CMD" serve --log-level "$OPENCODE_LOG_LEVEL" --print-logs >"$OPENCODE_LOG" 2>&1 &
-OPENCODE_PID=$!
-echo "codex serve pid: ${OPENCODE_PID} (log: $OPENCODE_LOG)"
+"$CODEX_CMD" serve --log-level "$CODEX_LOG_LEVEL" --print-logs >"$CODEX_LOG" 2>&1 &
+CODEX_PID=$!
+echo "codex serve pid: ${CODEX_PID} (log: $CODEX_LOG)"
 
 echo "Starting A2A server on ${A2A_HOST}:${A2A_PORT}..."
 A2A_HOST="$A2A_HOST" \
 A2A_PUBLIC_URL="$A2A_PUBLIC_URL" \
 A2A_LOG_LEVEL="$A2A_LOG_LEVEL" \
-uv run codex-a2a-serve --log-level "$A2A_LOG_LEVEL" >"$A2A_LOG" 2>&1 &
+uv run codex-a2a-server --log-level "$A2A_LOG_LEVEL" >"$A2A_LOG" 2>&1 &
 A2A_PID=$!
-echo "codex-a2a-serve pid: ${A2A_PID} (log: $A2A_LOG)"
+echo "codex-a2a-server pid: ${A2A_PID} (log: $A2A_LOG)"
 
 cleanup() {
   echo "Stopping services..."
   if [[ -n "${A2A_PID:-}" ]]; then
     kill "${A2A_PID}" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${OPENCODE_PID:-}" ]]; then
-    kill "${OPENCODE_PID}" >/dev/null 2>&1 || true
+  if [[ -n "${CODEX_PID:-}" ]]; then
+    kill "${CODEX_PID}" >/dev/null 2>&1 || true
   fi
   wait "${A2A_PID}" >/dev/null 2>&1 || true
-  wait "${OPENCODE_PID}" >/dev/null 2>&1 || true
+  wait "${CODEX_PID}" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT INT TERM HUP
@@ -94,5 +94,5 @@ Log directory: ${LOG_DIR}
 INFO
 
 echo "Services are running. Press Ctrl+C to stop."
-wait -n "${OPENCODE_PID}" "${A2A_PID}"
+wait -n "${CODEX_PID}" "${A2A_PID}"
 echo "One service exited. Shutting down."

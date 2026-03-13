@@ -14,7 +14,7 @@ from a2a.utils.errors import ServerError
 logger = logging.getLogger(__name__)
 
 
-class OpencodeRequestHandler(DefaultRequestHandler):
+class CodexRequestHandler(DefaultRequestHandler):
     """Harden request lifecycle behavior around cancel, subscribe, and disconnects."""
 
     async def on_cancel_task(

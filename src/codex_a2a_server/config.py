@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,61 +16,57 @@ class Settings(BaseSettings):
     )
 
     # Codex settings (app-server mode)
-    # `codex_base_url` is retained for legacy compatibility only.
     codex_base_url: str = Field(
         default="http://127.0.0.1:4096",
-        validation_alias=AliasChoices("CODEX_BASE_URL", "OPENCODE_BASE_URL"),
+        alias="CODEX_BASE_URL",
     )
     codex_directory: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_DIRECTORY", "OPENCODE_DIRECTORY"),
+        alias="CODEX_DIRECTORY",
     )
     codex_provider_id: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_PROVIDER_ID", "OPENCODE_PROVIDER_ID"),
+        alias="CODEX_PROVIDER_ID",
     )
     codex_model_id: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_MODEL_ID", "OPENCODE_MODEL_ID"),
+        alias="CODEX_MODEL_ID",
     )
     codex_agent: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_AGENT", "OPENCODE_AGENT"),
+        alias="CODEX_AGENT",
     )
     codex_system: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_SYSTEM", "OPENCODE_SYSTEM"),
+        alias="CODEX_SYSTEM",
     )
     codex_variant: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_VARIANT", "OPENCODE_VARIANT"),
+        alias="CODEX_VARIANT",
     )
     codex_timeout: float = Field(
         default=120.0,
-        validation_alias=AliasChoices("CODEX_TIMEOUT", "OPENCODE_TIMEOUT"),
+        alias="CODEX_TIMEOUT",
     )
     codex_timeout_stream: float | None = Field(
         default=None,
-        validation_alias=AliasChoices("CODEX_TIMEOUT_STREAM", "OPENCODE_TIMEOUT_STREAM"),
+        alias="CODEX_TIMEOUT_STREAM",
     )
     codex_cli_bin: str = Field(
         default="codex",
-        validation_alias=AliasChoices("CODEX_CLI_BIN", "OPENCODE_CLI_BIN"),
+        alias="CODEX_CLI_BIN",
     )
     codex_app_server_listen: str = Field(
         default="stdio://",
-        validation_alias=AliasChoices("CODEX_APP_SERVER_LISTEN", "OPENCODE_APP_SERVER_LISTEN"),
+        alias="CODEX_APP_SERVER_LISTEN",
     )
     codex_model: str = Field(
         default="gpt-5.1-codex",
-        validation_alias=AliasChoices("CODEX_MODEL", "OPENCODE_MODEL"),
+        alias="CODEX_MODEL",
     )
     codex_model_reasoning_effort: str | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "CODEX_MODEL_REASONING_EFFORT",
-            "OPENCODE_MODEL_REASONING_EFFORT",
-        ),
+        alias="CODEX_MODEL_REASONING_EFFORT",
     )
 
     # A2A settings

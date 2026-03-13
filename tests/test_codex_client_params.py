@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from codex_a2a_serve.codex_client import (
+from codex_a2a_server.codex_client import (
     InterruptRequestBinding,
-    OpencodeClient,
+    CodexClient,
     _PendingInterruptRequest,
 )
 from tests.helpers import make_settings, replay_codex_notification_fixture
@@ -15,7 +15,7 @@ from tests.helpers import make_settings, replay_codex_notification_fixture
 
 @pytest.mark.asyncio
 async def test_list_calls_use_expected_rpc_params() -> None:
-    client = OpencodeClient(
+    client = CodexClient(
         make_settings(
             a2a_bearer_token="t-1",
             codex_directory="/safe",
@@ -49,7 +49,7 @@ async def test_list_calls_use_expected_rpc_params() -> None:
 
 @pytest.mark.asyncio
 async def test_permission_reply_maps_to_codex_decision() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     client._pending_server_requests["100"] = _PendingInterruptRequest(
         binding=InterruptRequestBinding(
             request_id="100",
@@ -85,7 +85,7 @@ async def test_permission_reply_maps_to_codex_decision() -> None:
 
 @pytest.mark.asyncio
 async def test_question_reply_builds_answer_map() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     client._pending_server_requests["200"] = _PendingInterruptRequest(
         binding=InterruptRequestBinding(
             request_id="200",
@@ -133,7 +133,7 @@ async def test_question_reply_builds_answer_map() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_events_broadcasts_to_all_consumers() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
 
     async def fake_ensure_started() -> None:
         return None
@@ -168,7 +168,7 @@ async def test_stream_events_broadcasts_to_all_consumers() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_notification_normalizes_tool_output_delta_payload() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
     async def fake_enqueue(event: dict) -> None:
@@ -216,7 +216,7 @@ async def test_handle_notification_normalizes_tool_output_delta_payload() -> Non
 
 @pytest.mark.asyncio
 async def test_handle_notification_normalizes_file_change_output_delta_payload() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
     async def fake_enqueue(event: dict) -> None:
@@ -259,7 +259,7 @@ async def test_handle_notification_normalizes_file_change_output_delta_payload()
 
 @pytest.mark.asyncio
 async def test_handle_notification_normalizes_command_execution_started_state() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
     async def fake_enqueue(event: dict) -> None:
@@ -315,7 +315,7 @@ async def test_handle_notification_normalizes_command_execution_started_state() 
 
 @pytest.mark.asyncio
 async def test_handle_notification_normalizes_file_change_completed_state() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
     async def fake_enqueue(event: dict) -> None:
@@ -478,7 +478,7 @@ async def test_handle_notification_replays_real_file_change_fixture() -> None:
 
 @pytest.mark.asyncio
 async def test_send_message_timeout_override_none_disables_wait_timeout() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=0.01))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=0.01))
 
     async def fake_rpc_request(_method: str, _params: dict | None = None):
         return {"turn": {"id": "turn-1"}}
@@ -504,7 +504,7 @@ async def test_send_message_timeout_override_none_disables_wait_timeout() -> Non
 
 @pytest.mark.asyncio
 async def test_unsupported_server_request_returns_jsonrpc_error() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     sent: list[dict] = []
 
     async def fake_send_json(payload: dict) -> None:
@@ -527,7 +527,7 @@ async def test_unsupported_server_request_returns_jsonrpc_error() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_started_passes_reasoning_effort_override_to_codex_cli() -> None:
-    client = OpencodeClient(
+    client = CodexClient(
         make_settings(
             a2a_bearer_token="t-1",
             codex_timeout=1.0,
@@ -591,7 +591,7 @@ async def test_ensure_started_passes_reasoning_effort_override_to_codex_cli() ->
 
 @pytest.mark.asyncio
 async def test_read_stdout_loop_handles_very_long_json_line() -> None:
-    client = OpencodeClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     payload = {"method": "event/test", "params": {"blob": "x" * 200_000}}
     encoded = (json.dumps(payload) + "\n").encode("utf-8")
 

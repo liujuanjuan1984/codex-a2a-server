@@ -1,4 +1,4 @@
-from codex_a2a_serve.app import (
+from codex_a2a_server.app import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,

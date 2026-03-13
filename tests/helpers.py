@@ -9,8 +9,8 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, MessageSendParams, Role, TextPart
 
-from codex_a2a_serve.codex_client import InterruptRequestBinding, OpencodeClient, OpencodeMessage
-from codex_a2a_serve.config import Settings
+from codex_a2a_server.codex_client import CodexClient, CodexMessage, InterruptRequestBinding
+from codex_a2a_server.config import Settings
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -33,7 +33,7 @@ async def replay_codex_notification_fixture(
     *relative_parts: str,
 ) -> tuple[dict[str, Any], list[dict]]:
     fixture = load_json_fixture(*relative_parts)
-    client = OpencodeClient(make_settings(a2a_bearer_token="test-token", codex_timeout=1.0))
+    client = CodexClient(make_settings(a2a_bearer_token="test-token", codex_timeout=1.0))
     events: list[dict] = []
 
     async def fake_enqueue(event: dict) -> None:
@@ -117,7 +117,7 @@ def make_request_context(
     return RequestContext(request=params, task_id=task_id, context_id=context_id)
 
 
-class DummyChatOpencodeClient:
+class DummyChatCodexClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.created_sessions = 0
         self.sent_session_ids: list[str] = []
@@ -148,10 +148,10 @@ class DummyChatOpencodeClient:
         *,
         directory: str | None = None,
         timeout_override=None,  # noqa: ANN001
-    ) -> OpencodeMessage:
+    ) -> CodexMessage:
         del directory, timeout_override
         self.sent_session_ids.append(session_id)
-        return OpencodeMessage(
+        return CodexMessage(
             text=f"echo:{text}",
             session_id=session_id,
             message_id="m-1",
@@ -174,7 +174,7 @@ class DummyChatOpencodeClient:
         del request_id
 
 
-class DummySessionQueryOpencodeClient:
+class DummySessionQueryCodexClient:
     def __init__(self, _settings: Settings) -> None:
         self.directory = "/workspace"
         self.settings = _settings
@@ -227,13 +227,13 @@ class DummySessionQueryOpencodeClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
-    ) -> OpencodeMessage:
+    ) -> CodexMessage:
         self.last_command = {
             "session_id": session_id,
             "request": request,
             "directory": directory,
         }
-        return OpencodeMessage(
+        return CodexMessage(
             text=f"command:{request['command']} {request.get('arguments', '')}".strip(),
             session_id=session_id,
             message_id=request.get("messageID") or "cmd-1",

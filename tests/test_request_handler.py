@@ -16,7 +16,7 @@ from a2a.types import (
     TextPart,
 )
 
-from codex_a2a_serve.request_handler import OpencodeRequestHandler
+from codex_a2a_server.request_handler import CodexRequestHandler
 
 
 def _make_message_send_params() -> MessageSendParams:
@@ -39,7 +39,7 @@ async def test_cancel_is_idempotent_for_already_canceled_task() -> None:
     )
     await task_store.save(task)
 
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = CodexRequestHandler(agent_executor=MagicMock(), task_store=task_store)
 
     result = await handler.on_cancel_task(TaskIdParams(id="task-1"))
 
@@ -56,7 +56,7 @@ async def test_resubscribe_replays_terminal_task_once() -> None:
     )
     await task_store.save(task)
 
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = CodexRequestHandler(agent_executor=MagicMock(), task_store=task_store)
 
     events = [event async for event in handler.on_resubscribe_to_task(TaskIdParams(id="task-1"))]
 
@@ -75,7 +75,7 @@ async def test_stream_disconnect_cancels_producer() -> None:
             yield task
             await asyncio.sleep(10)
 
-    class _TestHandler(OpencodeRequestHandler):
+    class _TestHandler(CodexRequestHandler):
         async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
             del params, context
             queue = AsyncMock()

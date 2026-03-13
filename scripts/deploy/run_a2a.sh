@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Wrapper to run codex-a2a-serve from the shared venv.
+# Wrapper to run codex-a2a-server from the shared venv.
 set -euo pipefail
 
-OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/codex-a2a/codex-a2a-serve}"
-A2A_BIN="${A2A_BIN:-${OPENCODE_A2A_DIR}/.venv/bin/codex-a2a-serve}"
+CODEX_A2A_DIR="${CODEX_A2A_DIR:-/opt/codex-a2a/codex-a2a-server}"
+A2A_BIN="${A2A_BIN:-${CODEX_A2A_DIR}/.venv/bin/codex-a2a-server}"
 
 if [[ ! -x "$A2A_BIN" ]]; then
-  echo "codex-a2a-serve entrypoint not found at $A2A_BIN" >&2
+  echo "codex-a2a-server entrypoint not found at $A2A_BIN" >&2
   exit 1
 fi
 

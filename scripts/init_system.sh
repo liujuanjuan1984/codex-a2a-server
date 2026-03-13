@@ -5,18 +5,18 @@
 # Optional env:
 set -euo pipefail
 
-OPENCODE_CORE_DIR="/opt/.codex"
+CODEX_CORE_DIR="/opt/.codex"
 SHARED_WRAPPER_DIR="/opt/codex-a2a"
-OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/codex-a2a-serve"
+CODEX_A2A_DIR="${SHARED_WRAPPER_DIR}/codex-a2a-server"
 UV_PYTHON_DIR="/opt/uv-python"
 UV_PYTHON_DIR_MODE="777"
 UV_PYTHON_DIR_FINAL_MODE="755"
 UV_PYTHON_DIR_GROUP=""
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/codex-a2a"
-OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/codex-a2a-serve.git"
-OPENCODE_A2A_BRANCH="main"
-OPENCODE_INSTALL_CMD="curl -fsSL https://codex.ai/install | bash"
+CODEX_A2A_REPO="https://github.com/liujuanjuan1984/codex-a2a-serve.git"
+CODEX_A2A_BRANCH="main"
+CODEX_INSTALL_CMD="curl -fsSL https://codex.ai/install | bash"
 
 # Feature toggles (edit here to enable/disable).
 INSTALL_PACKAGES="true"
@@ -400,7 +400,7 @@ fi
 log_done "Systemd check completed."
 
 log_start "Ensuring shared directories exist..."
-ensure_dir "$OPENCODE_CORE_DIR" "755"
+ensure_dir "$CODEX_CORE_DIR" "755"
 ensure_dir "$SHARED_WRAPPER_DIR" "755"
 ensure_dir "$UV_PYTHON_DIR" "$UV_PYTHON_DIR_MODE"
 if [[ -n "$UV_PYTHON_DIR_GROUP" ]]; then
@@ -510,26 +510,26 @@ fi
 log_done "uv Python version check completed."
 
 log_start "Checking repository state..."
-if [[ -d "$OPENCODE_A2A_DIR/.git" ]]; then
-  log_done "Repo exists; skip clone: $OPENCODE_A2A_DIR"
+if [[ -d "$CODEX_A2A_DIR/.git" ]]; then
+  log_done "Repo exists; skip clone: $CODEX_A2A_DIR"
 else
-  if [[ -d "$OPENCODE_A2A_DIR" && -n "$(ls -A "$OPENCODE_A2A_DIR" 2>/dev/null)" ]]; then
-    warn "Directory not empty and not a git repo; skip clone: $OPENCODE_A2A_DIR"
+  if [[ -d "$CODEX_A2A_DIR" && -n "$(ls -A "$CODEX_A2A_DIR" 2>/dev/null)" ]]; then
+    warn "Directory not empty and not a git repo; skip clone: $CODEX_A2A_DIR"
     INCOMPLETE=1
   else
     if ! command -v git >/dev/null 2>&1; then
       warn "git not available; cannot clone repo."
       INCOMPLETE=1
     else
-      log_start "Cloning repo to $OPENCODE_A2A_DIR"
-      if ! $SUDO git clone "$OPENCODE_A2A_REPO" "$OPENCODE_A2A_DIR"; then
-        warn "git clone failed. Ensure SSH key is configured or manually clone into $OPENCODE_A2A_DIR."
+      log_start "Cloning repo to $CODEX_A2A_DIR"
+      if ! $SUDO git clone "$CODEX_A2A_REPO" "$CODEX_A2A_DIR"; then
+        warn "git clone failed. Ensure SSH key is configured or manually clone into $CODEX_A2A_DIR."
         INCOMPLETE=1
       else
-        if [[ -n "$OPENCODE_A2A_BRANCH" ]]; then
-          $SUDO git -C "$OPENCODE_A2A_DIR" checkout "$OPENCODE_A2A_BRANCH"
+        if [[ -n "$CODEX_A2A_BRANCH" ]]; then
+          $SUDO git -C "$CODEX_A2A_DIR" checkout "$CODEX_A2A_BRANCH"
         fi
-        log_done "Repo cloned to $OPENCODE_A2A_DIR"
+        log_done "Repo cloned to $CODEX_A2A_DIR"
       fi
     fi
   fi
@@ -537,19 +537,19 @@ fi
 log_done "Repository check completed."
 
 log_start "Checking A2A virtual environment..."
-if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/codex-a2a-serve" ]]; then
+if [[ -x "${CODEX_A2A_DIR}/.venv/bin/codex-a2a-server" ]]; then
   log_done "A2A venv already initialized; skip."
 else
   if ! command -v uv >/dev/null 2>&1; then
     warn "uv not available; cannot create A2A venv."
     INCOMPLETE=1
-  elif [[ ! -f "${OPENCODE_A2A_DIR}/pyproject.toml" ]]; then
-    warn "pyproject.toml not found in ${OPENCODE_A2A_DIR}; cannot create venv."
+  elif [[ ! -f "${CODEX_A2A_DIR}/pyproject.toml" ]]; then
+    warn "pyproject.toml not found in ${CODEX_A2A_DIR}; cannot create venv."
     INCOMPLETE=1
   else
     log_start "Creating A2A venv with uv sync..."
     (
-      cd "$OPENCODE_A2A_DIR"
+      cd "$CODEX_A2A_DIR"
       UV_PYTHON_DIR="$UV_PYTHON_DIR" \
         UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR" \
         uv sync --all-extras
@@ -560,36 +560,36 @@ fi
 log_done "A2A virtual environment check completed."
 
 log_start "Checking Codex installation..."
-OPENCODE_BIN="${OPENCODE_CORE_DIR}/bin/codex"
-if [[ -x "$OPENCODE_BIN" ]]; then
-  log_done "codex found at $OPENCODE_BIN"
+CODEX_BIN="${CODEX_CORE_DIR}/bin/codex"
+if [[ -x "$CODEX_BIN" ]]; then
+  log_done "codex found at $CODEX_BIN"
 elif command -v codex >/dev/null 2>&1; then
   log_done "codex found in PATH."
 else
-  if [[ -n "$OPENCODE_INSTALL_CMD" ]]; then
-    log_start "Running OPENCODE_INSTALL_CMD..."
+  if [[ -n "$CODEX_INSTALL_CMD" ]]; then
+    log_start "Running CODEX_INSTALL_CMD..."
     if [[ -n "$SUDO" ]]; then
-      $SUDO env OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+      $SUDO env CODEX_CORE_DIR="$CODEX_CORE_DIR" bash -lc "$CODEX_INSTALL_CMD"
     else
-      OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+      CODEX_CORE_DIR="$CODEX_CORE_DIR" bash -lc "$CODEX_INSTALL_CMD"
     fi
-    log_done "OPENCODE_INSTALL_CMD completed."
-    if [[ ! -d "$OPENCODE_CORE_DIR" && -d "/root/.codex" ]]; then
-      log_start "Relocating Codex from /root/.codex to $OPENCODE_CORE_DIR..."
-      $SUDO mv /root/.codex "$OPENCODE_CORE_DIR"
-      $SUDO ln -sf "${OPENCODE_CORE_DIR}/bin/codex" /usr/local/bin/codex
+    log_done "CODEX_INSTALL_CMD completed."
+    if [[ ! -d "$CODEX_CORE_DIR" && -d "/root/.codex" ]]; then
+      log_start "Relocating Codex from /root/.codex to $CODEX_CORE_DIR..."
+      $SUDO mv /root/.codex "$CODEX_CORE_DIR"
+      $SUDO ln -sf "${CODEX_CORE_DIR}/bin/codex" /usr/local/bin/codex
       log_done "Codex relocated and symlinked."
-    elif [[ ! -d "$OPENCODE_CORE_DIR" && -n "${HOME:-}" && -d "${HOME}/.codex" ]]; then
-      log_start "Relocating Codex from ${HOME}/.codex to $OPENCODE_CORE_DIR..."
-      $SUDO mv "${HOME}/.codex" "$OPENCODE_CORE_DIR"
-      $SUDO ln -sf "${OPENCODE_CORE_DIR}/bin/codex" /usr/local/bin/codex
+    elif [[ ! -d "$CODEX_CORE_DIR" && -n "${HOME:-}" && -d "${HOME}/.codex" ]]; then
+      log_start "Relocating Codex from ${HOME}/.codex to $CODEX_CORE_DIR..."
+      $SUDO mv "${HOME}/.codex" "$CODEX_CORE_DIR"
+      $SUDO ln -sf "${CODEX_CORE_DIR}/bin/codex" /usr/local/bin/codex
       log_done "Codex relocated and symlinked."
     fi
   else
-    warn "codex not found; set OPENCODE_INSTALL_CMD to install it."
+    warn "codex not found; set CODEX_INSTALL_CMD to install it."
     INCOMPLETE=1
   fi
-  if [[ ! -x "$OPENCODE_BIN" ]] && ! command -v codex >/dev/null 2>&1; then
+  if [[ ! -x "$CODEX_BIN" ]] && ! command -v codex >/dev/null 2>&1; then
     warn "codex still missing after install command."
     INCOMPLETE=1
   fi

@@ -323,7 +323,7 @@ start_instance() {
     if [[ -n "$CODEX_TIMEOUT_STREAM" ]]; then
       export CODEX_TIMEOUT_STREAM
     fi
-    exec uv run codex-a2a-serve
+    exec uv run codex-a2a-server
   ) >>"$LOG_FILE" 2>&1 &
 
   local pid="$!"

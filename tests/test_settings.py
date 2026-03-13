@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
-from codex_a2a_serve.config import Settings
+from codex_a2a_server.config import Settings
 
 
 def test_settings_missing_required():
@@ -20,7 +20,7 @@ def test_settings_missing_required():
 def test_settings_valid():
     env = {
         "A2A_BEARER_TOKEN": "test-token",
-        "OPENCODE_TIMEOUT": "300",
+        "CODEX_TIMEOUT": "300",
         "CODEX_MODEL_REASONING_EFFORT": "high",
     }
     with mock.patch.dict(os.environ, env, clear=True):

@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
-from codex_a2a_serve.codex_client import OpencodeClient
+from codex_a2a_server.agent import CodexAgentExecutor
+from codex_a2a_server.codex_client import CodexClient
 from tests.helpers import make_request_context_mock, make_settings
 
 
@@ -18,12 +18,12 @@ def mock_client():
         a2a_allow_directory_override=True,
     )
 
-    client = OpencodeClient(settings)
+    client = CodexClient(settings)
     return client
 
 
 def test_resolve_and_validate_directory_valid(mock_client):
-    executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    executor = CodexAgentExecutor(mock_client, streaming_enabled=False)
 
     # Setup mock workspace
     base_dir = Path("/tmp/workspace").resolve()
@@ -43,7 +43,7 @@ def test_resolve_and_validate_directory_valid(mock_client):
 
 
 def test_resolve_and_validate_directory_traversal(mock_client):
-    executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    executor = CodexAgentExecutor(mock_client, streaming_enabled=False)
 
     # Attempt traversal
     with pytest.raises(ValueError, match="outside the allowed workspace"):
@@ -59,7 +59,7 @@ def test_resolve_and_validate_directory_traversal(mock_client):
 def test_resolve_and_validate_directory_override_disabled(mock_client):
     # Disable override
     mock_client._settings.a2a_allow_directory_override = False
-    executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    executor = CodexAgentExecutor(mock_client, streaming_enabled=False)
 
     # Deny different path
     with pytest.raises(ValueError, match="override is disabled"):
@@ -72,7 +72,7 @@ def test_resolve_and_validate_directory_override_disabled(mock_client):
 
 @pytest.mark.asyncio
 async def test_execute_with_invalid_directory(mock_client):
-    executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    executor = CodexAgentExecutor(mock_client, streaming_enabled=False)
     event_queue = AsyncMock(spec=EventQueue)
 
     context = make_request_context_mock(

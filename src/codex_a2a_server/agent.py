@@ -23,7 +23,7 @@ from a2a.types import (
     TextPart,
 )
 
-from .codex_client import OpencodeClient
+from .codex_client import CodexClient
 from .extension_contracts import SHARED_METADATA_NAMESPACE
 from .output_mapping import (
     build_assistant_message,
@@ -108,10 +108,10 @@ class _TTLCache:
             self._store.pop(k, None)
 
 
-class OpencodeAgentExecutor(AgentExecutor):
+class CodexAgentExecutor(AgentExecutor):
     def __init__(
         self,
-        client: OpencodeClient,
+        client: CodexClient,
         *,
         streaming_enabled: bool,
         session_cache_ttl_seconds: int = 3600,

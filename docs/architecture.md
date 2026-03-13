@@ -1,11 +1,11 @@
 # Architecture Guide
 
-This document explains what `codex-a2a-serve` is responsible for, what remains
+This document explains what `codex-a2a-server` is responsible for, what remains
 inside Codex, and how requests move through the service.
 
 ## System Role
 
-`codex-a2a-serve` is an adapter layer between A2A clients and the Codex
+`codex-a2a-server` is an adapter layer between A2A clients and the Codex
 runtime.
 
 It is responsible for:
@@ -25,7 +25,7 @@ It is not responsible for:
 
 ```mermaid
 flowchart LR
-    Client["A2A Client / Hub / App"] --> Gateway["codex-a2a-serve"]
+    Client["A2A Client / Hub / App"] --> Gateway["codex-a2a-server"]
     Gateway --> Contracts["A2A contracts\nstream/session/interrupt"]
     Gateway --> Ops["Auth / logging / deployment boundary"]
     Contracts --> Codex["Codex app-server / CLI runtime"]

@@ -22,8 +22,8 @@ from .tool_call_payloads import (
 logger = logging.getLogger(__name__)
 
 _UNSET = object()
-_DEFAULT_CLIENT_NAME = "codex_a2a_serve"
-_DEFAULT_CLIENT_TITLE = "Codex A2A Serve"
+_DEFAULT_CLIENT_NAME = "codex_a2a_server"
+_DEFAULT_CLIENT_TITLE = "Codex A2A Server"
 _DEFAULT_CLIENT_VERSION = "0.1.0"
 _EVENT_QUEUE_MAXSIZE = 2048
 _INTERRUPT_REQUEST_TTL_SECONDS = 3600
@@ -165,7 +165,7 @@ def _build_tool_call_state_event(params: dict[str, Any]) -> dict[str, Any] | Non
 
 
 @dataclass(frozen=True)
-class OpencodeMessage:
+class CodexMessage:
     text: str
     session_id: str
     message_id: str | None
@@ -226,7 +226,7 @@ class _TurnTracker:
         return "".join(self.text_chunks)
 
 
-class OpencodeClient:
+class CodexClient:
     """Codex app-server client adapter (stdio JSON-RPC)."""
 
     def __init__(self, settings: Settings) -> None:
@@ -861,7 +861,7 @@ class OpencodeClient:
         *,
         directory: str | None = None,
         timeout_override: float | None | object = _UNSET,
-    ) -> OpencodeMessage:
+    ) -> CodexMessage:
         timeout_seconds: float | None
         if timeout_override is _UNSET:
             timeout_seconds = self._request_timeout
@@ -904,7 +904,7 @@ class OpencodeClient:
                 await asyncio.wait_for(tracker.completed.wait(), timeout=timeout_seconds)
             if tracker.error:
                 raise RuntimeError(f"codex turn failed: {tracker.error}")
-            return OpencodeMessage(
+            return CodexMessage(
                 text=tracker.text,
                 session_id=session_id,
                 message_id=tracker.message_id,
@@ -950,7 +950,7 @@ class OpencodeClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
-    ) -> OpencodeMessage:
+    ) -> CodexMessage:
         command = str(request["command"]).strip()
         arguments = str(request.get("arguments", "")).strip()
         prompt = f"/{command}" if not arguments else f"/{command} {arguments}"

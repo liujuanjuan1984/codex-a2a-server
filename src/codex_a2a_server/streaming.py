@@ -13,7 +13,7 @@ from typing import Any
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import DataPart, TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
 
-from .codex_client import OpencodeClient
+from .codex_client import CodexClient
 from .output_mapping import (
     build_output_metadata,
     enqueue_artifact_update,
@@ -262,7 +262,7 @@ def build_stream_artifact_metadata(
 
 async def consume_codex_stream(
     *,
-    client: OpencodeClient,
+    client: CodexClient,
     session_id: str,
     task_id: str,
     context_id: str,

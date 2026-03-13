@@ -3,8 +3,8 @@ import logging
 import httpx
 import pytest
 
-from codex_a2a_serve.config import Settings
-from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
+from codex_a2a_server.config import Settings
+from tests.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.helpers import make_settings
 
 _BASE_SETTINGS = {
@@ -15,9 +15,9 @@ _BASE_SETTINGS = {
 
 @pytest.mark.asyncio
 async def test_session_query_extension_requires_bearer_token(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
+    monkeypatch.setattr(app_module, "CodexClient", DummyCodexClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -44,12 +44,12 @@ async def test_session_query_extension_requires_bearer_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -106,14 +106,14 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_array_upstream_payload(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class WeirdPayloadClient(DummyOpencodeClient):
+    class WeirdPayloadClient(DummyCodexClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self._sessions_payload = {"foo": "bar"}  # no items
 
-    monkeypatch.setattr(app_module, "OpencodeClient", WeirdPayloadClient)
+    monkeypatch.setattr(app_module, "CodexClient", WeirdPayloadClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -139,14 +139,14 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
 
 @pytest.mark.asyncio
 async def test_session_query_extension_session_title_is_extracted_or_placeholder(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class TitlePayloadClient(DummyOpencodeClient):
+    class TitlePayloadClient(DummyCodexClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self._sessions_payload = [{"id": "s-1", "title": "My Session"}]
 
-    monkeypatch.setattr(app_module, "OpencodeClient", TitlePayloadClient)
+    monkeypatch.setattr(app_module, "CodexClient", TitlePayloadClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -167,9 +167,9 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
 
 @pytest.mark.asyncio
 async def test_session_query_extension_message_role_and_id_from_info(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class InfoRoleClient(DummyOpencodeClient):
+    class InfoRoleClient(DummyCodexClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self._messages_payload = [
@@ -179,7 +179,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
                 }
             ]
 
-    monkeypatch.setattr(app_module, "OpencodeClient", InfoRoleClient)
+    monkeypatch.setattr(app_module, "CodexClient", InfoRoleClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -206,9 +206,9 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_accepts_top_level_list_payload(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class ListPayloadClient(DummyOpencodeClient):
+    class ListPayloadClient(DummyCodexClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self._sessions_payload = [{"id": "s-1", "title": "s1"}]
@@ -219,7 +219,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
                 }
             ]
 
-    monkeypatch.setattr(app_module, "OpencodeClient", ListPayloadClient)
+    monkeypatch.setattr(app_module, "CodexClient", ListPayloadClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -252,15 +252,15 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class AltKeyPayloadClient(DummyOpencodeClient):
+    class AltKeyPayloadClient(DummyCodexClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self._sessions_payload = {"sessions": [{"id": "s-1"}]}
             self._messages_payload = {"messages": [{"id": "m-1", "text": "SECRET_HISTORY"}]}
 
-    monkeypatch.setattr(app_module, "OpencodeClient", AltKeyPayloadClient)
+    monkeypatch.setattr(app_module, "CodexClient", AltKeyPayloadClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -294,12 +294,12 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -326,12 +326,12 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_page_size_pagination(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -357,15 +357,15 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class NotFoundOpencodeClient(DummyOpencodeClient):
+    class NotFoundCodexClient(DummyCodexClient):
         async def list_messages(self, session_id: str, *, params=None):
             request = httpx.Request("GET", "http://codex/session/x/message")
             response = httpx.Response(404, request=request)
             raise httpx.HTTPStatusError("Not Found", request=request, response=response)
 
-    monkeypatch.setattr(app_module, "OpencodeClient", NotFoundOpencodeClient)
+    monkeypatch.setattr(app_module, "CodexClient", NotFoundCodexClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -392,10 +392,10 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_does_not_log_response_bodies(monkeypatch, caplog):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
-    caplog.set_level(logging.DEBUG, logger="codex_a2a_serve.app")
+    monkeypatch.setattr(app_module, "CodexClient", DummyCodexClient)
+    caplog.set_level(logging.DEBUG, logger="codex_a2a_server.app")
 
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=True, **_BASE_SETTINGS)
@@ -423,12 +423,12 @@ async def test_session_query_extension_does_not_log_response_bodies(monkeypatch,
 
 @pytest.mark.asyncio
 async def test_session_control_prompt_async_returns_turn_handle(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -467,12 +467,12 @@ async def test_session_control_prompt_async_returns_turn_handle(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_control_command_maps_response_to_a2a_message(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -516,12 +516,12 @@ async def test_session_control_command_maps_response_to_a2a_message(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_session_control_command_accepts_missing_arguments(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -562,12 +562,12 @@ async def test_session_control_command_accepts_missing_arguments(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_control_shell_maps_response_to_a2a_message(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -602,12 +602,12 @@ async def test_session_control_shell_maps_response_to_a2a_message(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_control_rejects_invalid_request_shape(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -653,9 +653,9 @@ async def test_session_control_rejects_invalid_request_shape(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_control_rejects_invalid_metadata_directory(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
@@ -663,7 +663,7 @@ async def test_session_control_rejects_invalid_metadata_directory(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",
@@ -697,13 +697,13 @@ async def test_session_control_rejects_invalid_metadata_directory(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_permission_reply(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("perm-1", interrupt_type="permission")
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -741,12 +741,12 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_legacy_permission_fields(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -770,14 +770,14 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("q-1", interrupt_type="question")
     dummy.prime_interrupt_request("q-2", interrupt_type="question")
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -819,9 +819,9 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    class NotFoundInterruptClient(DummyOpencodeClient):
+    class NotFoundInterruptClient(DummyCodexClient):
         async def permission_reply(
             self,
             request_id: str,
@@ -839,7 +839,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("perm-404", interrupt_type="permission")
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -867,12 +867,12 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 async def test_interrupt_callback_extension_returns_not_found_for_missing_local_request(
     monkeypatch,
 ):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -898,13 +898,13 @@ async def test_interrupt_callback_extension_returns_not_found_for_missing_local_
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_returns_expired_for_stale_request(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("perm-expired", interrupt_type="permission", created_at=1.0)
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -930,13 +930,13 @@ async def test_interrupt_callback_extension_returns_expired_for_stale_request(mo
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("perm-type", interrupt_type="permission")
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -965,13 +965,13 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_masks_owner_mismatch_as_not_found(monkeypatch):
-    import codex_a2a_serve.app as app_module
+    import codex_a2a_server.app as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyCodexClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
     dummy.prime_interrupt_request("perm-owned", interrupt_type="permission", session_id="ses-owned")
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )

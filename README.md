@@ -1,8 +1,8 @@
-# codex-a2a-serve
+# codex-a2a-server
 
 > Turn Codex into a stateful, production-oriented A2A agent service.
 
-`codex-a2a-serve` exposes Codex through standard A2A interfaces and adds the
+`codex-a2a-server` exposes Codex through standard A2A interfaces and adds the
 operational pieces that raw agent runtimes usually do not provide by default:
 authentication, session continuity, streaming contracts, interrupt handling,
 deployment tooling, and documentation for running it as a service.
@@ -15,7 +15,7 @@ embedded into applications, gateways, and orchestration systems without
 forcing each consumer to re-implement transport bridging, auth, or runtime
 operations.
 
-In practice, `codex-a2a-serve` acts as:
+In practice, `codex-a2a-server` acts as:
 
 - a protocol bridge from A2A to Codex
 - a security and deployment boundary around the Codex runtime
@@ -96,7 +96,7 @@ If you want a client-side integration layer to consume this service, prefer
 
 It is a better place for client concerns such as A2A consumption, upstream
 adapter normalization, and application-facing integration, while
-`codex-a2a-serve` stays focused on the server/runtime boundary around Codex.
+`codex-a2a-server` stays focused on the server/runtime boundary around Codex.
 
 ## Quick Start
 
@@ -115,7 +115,7 @@ export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24
 3. Start the service:
 
 ```bash
-uv run codex-a2a-serve
+uv run codex-a2a-server
 ```
 
 4. Open the Agent Card:

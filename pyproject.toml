@@ -1,5 +1,5 @@
 [project]
-name = "codex-a2a-serve"
+name = "codex-a2a-server"
 version = "0.1.0"
 description = "A2A wrapper service for codex"
 readme = "README.md"
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-codex-a2a-serve = "codex_a2a_serve.app:main"
+codex-a2a-server = "codex_a2a_server.app:main"
 
 [tool.ruff]
 line-length = 100

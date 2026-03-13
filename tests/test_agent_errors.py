@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
+from codex_a2a_server.agent import CodexAgentExecutor
 from tests.helpers import make_request_context_mock
 
 
 @pytest.mark.asyncio
 async def test_execute_missing_ids():
     client = MagicMock()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
 
     # Mock RequestContext with missing IDs
     context = make_request_context_mock(
@@ -38,7 +38,7 @@ async def test_execute_missing_ids():
 @pytest.mark.asyncio
 async def test_cancel_missing_ids():
     client = MagicMock()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
 
     # Mock RequestContext with missing IDs
     context = make_request_context_mock(
@@ -59,7 +59,7 @@ async def test_cancel_missing_ids():
 @pytest.mark.asyncio
 async def test_execute_invalid_metadata_type():
     client = MagicMock()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
 
     context = make_request_context_mock(
         task_id="task-1",

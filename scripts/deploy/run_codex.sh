@@ -2,24 +2,24 @@
 # Wrapper to run codex serve with configured host/port/logging.
 set -euo pipefail
 
-OPENCODE_CORE_DIR="${OPENCODE_CORE_DIR:-/opt/.codex}"
-OPENCODE_BIN="${OPENCODE_BIN:-${OPENCODE_CORE_DIR}/bin/codex}"
-OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-INFO}"
-OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
-OPENCODE_BIND_PORT="${OPENCODE_BIND_PORT:-4096}"
-OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
-OPENCODE_PROVIDER_ID="${OPENCODE_PROVIDER_ID:-}"
-OPENCODE_MODEL_ID="${OPENCODE_MODEL_ID:-}"
-OPENCODE_LSP="${OPENCODE_LSP:-false}"
+CODEX_CORE_DIR="${CODEX_CORE_DIR:-/opt/.codex}"
+CODEX_BIN="${CODEX_BIN:-${CODEX_CORE_DIR}/bin/codex}"
+CODEX_LOG_LEVEL="${CODEX_LOG_LEVEL:-INFO}"
+CODEX_BIND_HOST="${CODEX_BIND_HOST:-127.0.0.1}"
+CODEX_BIND_PORT="${CODEX_BIND_PORT:-4096}"
+CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
+CODEX_PROVIDER_ID="${CODEX_PROVIDER_ID:-}"
+CODEX_MODEL_ID="${CODEX_MODEL_ID:-}"
+CODEX_LSP="${CODEX_LSP:-false}"
 GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
-if [[ ! -x "$OPENCODE_BIN" ]]; then
-  echo "codex binary not found at $OPENCODE_BIN" >&2
+if [[ ! -x "$CODEX_BIN" ]]; then
+  echo "codex binary not found at $CODEX_BIN" >&2
   exit 1
 fi
 
-provider_lc="${OPENCODE_PROVIDER_ID,,}"
-model_lc="${OPENCODE_MODEL_ID,,}"
+provider_lc="${CODEX_PROVIDER_ID,,}"
+model_lc="${CODEX_MODEL_ID,,}"
 if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
   if [[ -z "$GOOGLE_GENERATIVE_AI_API_KEY" ]]; then
     echo "GOOGLE_GENERATIVE_AI_API_KEY is required when using Google/Gemini model settings" >&2
@@ -27,8 +27,8 @@ if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
   fi
 fi
 
-if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
-  case "${OPENCODE_LSP,,}" in
+if [[ -z "${CODEX_CONFIG_CONTENT:-}" ]]; then
+  case "${CODEX_LSP,,}" in
     1|true|yes|on)
       lsp_json=true
       ;;
@@ -36,28 +36,30 @@ if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
       lsp_json=false
       ;;
     *)
-      echo "Invalid OPENCODE_LSP value: ${OPENCODE_LSP} (expected true/false)" >&2
+      echo "Invalid CODEX_LSP value: ${CODEX_LSP} (expected true/false)" >&2
       exit 1
       ;;
   esac
-  printf -v OPENCODE_CONFIG_CONTENT \
+  printf -v CODEX_CONFIG_CONTENT \
     '{"$schema":"https://codex.ai/config.json","lsp":%s}' \
     "$lsp_json"
-  export OPENCODE_CONFIG_CONTENT
 fi
 
-cmd=("$OPENCODE_BIN" serve --log-level "$OPENCODE_LOG_LEVEL" --print-logs)
+# Upstream Codex SDK/runtime still consumes OPENCODE_CONFIG_CONTENT.
+export OPENCODE_CONFIG_CONTENT="$CODEX_CONFIG_CONTENT"
 
-if [[ -n "$OPENCODE_BIND_HOST" ]]; then
-  cmd+=(--hostname "$OPENCODE_BIND_HOST")
+cmd=("$CODEX_BIN" serve --log-level "$CODEX_LOG_LEVEL" --print-logs)
+
+if [[ -n "$CODEX_BIND_HOST" ]]; then
+  cmd+=(--hostname "$CODEX_BIND_HOST")
 fi
 
-if [[ -n "$OPENCODE_BIND_PORT" ]]; then
-  cmd+=(--port "$OPENCODE_BIND_PORT")
+if [[ -n "$CODEX_BIND_PORT" ]]; then
+  cmd+=(--port "$CODEX_BIND_PORT")
 fi
 
-if [[ -n "$OPENCODE_EXTRA_ARGS" ]]; then
-  read -r -a extra_args <<<"$OPENCODE_EXTRA_ARGS"
+if [[ -n "$CODEX_EXTRA_ARGS" ]]; then
+  read -r -a extra_args <<<"$CODEX_EXTRA_ARGS"
   cmd+=("${extra_args[@]}")
 fi
 

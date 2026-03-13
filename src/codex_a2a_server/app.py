@@ -28,8 +28,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
-from .agent import OpencodeAgentExecutor
-from .codex_client import OpencodeClient
+from .agent import CodexAgentExecutor
+from .codex_client import CodexClient
 from .config import Settings
 from .extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
@@ -40,8 +40,8 @@ from .extension_contracts import (
     build_session_query_extension_params,
     build_streaming_extension_params,
 )
-from .jsonrpc_ext import OpencodeSessionQueryJSONRPCApplication
-from .request_handler import OpencodeRequestHandler
+from .jsonrpc_ext import CodexSessionQueryJSONRPCApplication
+from .request_handler import CodexRequestHandler
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def _build_agent_card_description(
     )
     parts: list[str] = [base, summary]
     parts.append(
-        "Within one codex-a2a-serve instance, all consumers share the same "
+        "Within one codex-a2a-server instance, all consumers share the same "
         "underlying Codex workspace/environment."
     )
     project = deployment_context.get("project")
@@ -310,15 +310,15 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
 
 def create_app(settings: Settings) -> FastAPI:
-    client = OpencodeClient(settings)
-    executor = OpencodeAgentExecutor(
+    client = CodexClient(settings)
+    executor = CodexAgentExecutor(
         client,
         streaming_enabled=settings.a2a_streaming,
         session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
         session_cache_maxsize=settings.a2a_session_cache_maxsize,
     )
     task_store = InMemoryTaskStore()
-    handler = OpencodeRequestHandler(
+    handler = CodexRequestHandler(
         agent_executor=executor,
         task_store=task_store,
     )
@@ -332,7 +332,7 @@ def create_app(settings: Settings) -> FastAPI:
     context_builder = IdentityAwareCallContextBuilder()
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
-    app = OpencodeSessionQueryJSONRPCApplication(
+    app = CodexSessionQueryJSONRPCApplication(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,

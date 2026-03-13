@@ -3,15 +3,15 @@ import asyncio
 import pytest
 from a2a.types import Task
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
-from codex_a2a_serve.codex_client import OpencodeMessage
-from tests.helpers import DummyChatOpencodeClient, DummyEventQueue, make_request_context
+from codex_a2a_server.agent import CodexAgentExecutor
+from codex_a2a_server.codex_client import CodexMessage
+from tests.helpers import DummyChatCodexClient, DummyEventQueue, make_request_context
 
 
 @pytest.mark.asyncio
 async def test_agent_prefers_metadata_shared_session_id() -> None:
-    client = DummyChatOpencodeClient()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    client = DummyChatCodexClient()
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
     ctx = make_request_context(
@@ -28,8 +28,8 @@ async def test_agent_prefers_metadata_shared_session_id() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
-    client = DummyChatOpencodeClient()
-    executor = OpencodeAgentExecutor(
+    client = DummyChatCodexClient()
+    executor = CodexAgentExecutor(
         client,
         streaming_enabled=False,
         session_cache_ttl_seconds=3600,
@@ -59,7 +59,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
-    class SlowCreateClient(DummyChatOpencodeClient):
+    class SlowCreateClient(DummyChatCodexClient):
         async def create_session(
             self,
             title: str | None = None,
@@ -70,7 +70,7 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
             return await super().create_session(title=title, directory=directory)
 
     client = SlowCreateClient()
-    executor = OpencodeAgentExecutor(
+    executor = CodexAgentExecutor(
         client,
         streaming_enabled=False,
         session_cache_ttl_seconds=3600,
@@ -89,7 +89,7 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_message_id() -> None:
-    class MissingMessageIdClient(DummyChatOpencodeClient):
+    class MissingMessageIdClient(DummyChatCodexClient):
         async def send_message(
             self,
             session_id: str,
@@ -97,10 +97,10 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
             *,
             directory: str | None = None,
             timeout_override=None,  # noqa: ANN001
-        ) -> OpencodeMessage:
+        ) -> CodexMessage:
             del text, directory, timeout_override
             self.sent_session_ids.append(session_id)
-            return OpencodeMessage(
+            return CodexMessage(
                 text="echo:hello",
                 session_id=session_id,
                 message_id=None,
@@ -108,7 +108,7 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
             )
 
     client = MissingMessageIdClient()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
     await executor.execute(
@@ -123,7 +123,7 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
 
 @pytest.mark.asyncio
 async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
-    class UsageClient(DummyChatOpencodeClient):
+    class UsageClient(DummyChatCodexClient):
         async def send_message(
             self,
             session_id: str,
@@ -131,10 +131,10 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
             *,
             directory: str | None = None,
             timeout_override=None,  # noqa: ANN001
-        ) -> OpencodeMessage:
+        ) -> CodexMessage:
             del text, directory, timeout_override
             self.sent_session_ids.append(session_id)
-            return OpencodeMessage(
+            return CodexMessage(
                 text="echo:hello",
                 session_id=session_id,
                 message_id="msg-usage",
@@ -152,7 +152,7 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
             )
 
     client = UsageClient()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
     await executor.execute(

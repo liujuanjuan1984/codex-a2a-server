@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .codex_client import InterruptRequestBinding, InterruptRequestError, OpencodeClient
+from .codex_client import InterruptRequestBinding, InterruptRequestError, CodexClient
 from .extension_contracts import (
     COMMAND_ALLOWED_FIELDS,
     PROMPT_ASYNC_ALLOWED_FIELDS,
@@ -275,7 +275,7 @@ def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:
     raise ValueError(f"Codex {kind} payload must be an array; got {type(raw_result).__name__}")
 
 
-class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
+class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     """Extend A2A JSON-RPC endpoint with Codex session query methods.
 
     These methods are optional (declared via AgentCard.capabilities.extensions) and do
@@ -285,7 +285,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     def __init__(
         self,
         *args: Any,
-        codex_client: OpencodeClient,
+        codex_client: CodexClient,
         methods: dict[str, str],
         directory_resolver=None,
         session_claim=None,

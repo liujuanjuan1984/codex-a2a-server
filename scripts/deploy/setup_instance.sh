@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create project user, directories, and env files for systemd services.
 # Usage: [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [ENABLE_SECRET_PERSISTENCE=true] ./setup_instance.sh <project_name>
-# Requires env: DATA_ROOT, OPENCODE_BIND_HOST, OPENCODE_BIND_PORT, OPENCODE_LOG_LEVEL,
+# Requires env: DATA_ROOT, CODEX_BIND_HOST, CODEX_BIND_PORT, CODEX_LOG_LEVEL,
 #               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Secret persistence is opt-in via ENABLE_SECRET_PERSISTENCE=true.
@@ -19,9 +19,9 @@ if [[ "$#" -ne 1 || -z "$PROJECT_NAME" ]]; then
 fi
 
 : "${DATA_ROOT:?}"
-: "${OPENCODE_BIND_HOST:?}"
-: "${OPENCODE_BIND_PORT:?}"
-: "${OPENCODE_LOG_LEVEL:?}"
+: "${CODEX_BIND_HOST:?}"
+: "${CODEX_BIND_PORT:?}"
+: "${CODEX_LOG_LEVEL:?}"
 : "${A2A_HOST:?}"
 : "${A2A_PORT:?}"
 : "${A2A_PUBLIC_URL:?}"
@@ -32,7 +32,7 @@ PROJECT_DIR="${DATA_ROOT}/${PROJECT_NAME}"
 WORKSPACE_DIR="${PROJECT_DIR}/workspace"
 CONFIG_DIR="${PROJECT_DIR}/config"
 CODEX_AUTH_ENV_FILE="${CONFIG_DIR}/codex.auth.env"
-OPENCODE_SECRET_ENV_FILE="${CONFIG_DIR}/codex.secret.env"
+CODEX_SECRET_ENV_FILE="${CONFIG_DIR}/codex.secret.env"
 A2A_SECRET_ENV_FILE="${CONFIG_DIR}/a2a.secret.env"
 LOG_DIR="${PROJECT_DIR}/logs"
 RUN_DIR="${PROJECT_DIR}/run"
@@ -40,8 +40,8 @@ ASKPASS_SCRIPT="${RUN_DIR}/git-askpass.sh"
 CACHE_DIR="${PROJECT_DIR}/.cache/codex"
 LOCAL_DIR="${PROJECT_DIR}/.local"
 STATE_DIR="${LOCAL_DIR}/state"
-OPENCODE_LOCAL_SHARE_DIR="${PROJECT_DIR}/.local/share/codex"
-OPENCODE_BIN_DIR="${OPENCODE_LOCAL_SHARE_DIR}/bin"
+CODEX_LOCAL_SHARE_DIR="${PROJECT_DIR}/.local/share/codex"
+CODEX_BIN_DIR="${CODEX_LOCAL_SHARE_DIR}/bin"
 DATA_DIR="${PROJECT_DIR}/.local/share/codex/storage/session"
 SECRET_ENV_KEYS=("${PROVIDER_SECRET_ENV_KEYS[@]}")
 
@@ -127,10 +127,10 @@ sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
   "$LOCAL_DIR" \
   "$STATE_DIR" \
   "$DATA_DIR" \
-  "$OPENCODE_BIN_DIR"
+  "$CODEX_BIN_DIR"
 # If the directory existed with wrong ownership (e.g., started as root once),
 # fix it to avoid EACCES when codex tries to mkdir under codex/.
-sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$CACHE_DIR" "$STATE_DIR" "$OPENCODE_LOCAL_SHARE_DIR"
+sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$CACHE_DIR" "$STATE_DIR" "$CODEX_LOCAL_SHARE_DIR"
 
 codex_auth_example_tmp="$(mktemp)"
 cat <<'EOF' >"$codex_auth_example_tmp"
@@ -184,11 +184,11 @@ fi
 
 codex_env_tmp="$(mktemp)"
 {
-  echo "OPENCODE_LOG_LEVEL=${OPENCODE_LOG_LEVEL}"
-  echo "OPENCODE_BIND_HOST=${OPENCODE_BIND_HOST}"
-  echo "OPENCODE_BIND_PORT=${OPENCODE_BIND_PORT}"
-  echo "OPENCODE_EXTRA_ARGS=${OPENCODE_EXTRA_ARGS:-}"
-  echo "OPENCODE_LSP=${OPENCODE_LSP:-false}"
+  echo "CODEX_LOG_LEVEL=${CODEX_LOG_LEVEL}"
+  echo "CODEX_BIND_HOST=${CODEX_BIND_HOST}"
+  echo "CODEX_BIND_PORT=${CODEX_BIND_PORT}"
+  echo "CODEX_EXTRA_ARGS=${CODEX_EXTRA_ARGS:-}"
+  echo "CODEX_LSP=${CODEX_LSP:-false}"
   echo "GIT_ASKPASS=${ASKPASS_SCRIPT}"
   echo "GIT_ASKPASS_REQUIRE=force"
   echo "GIT_TERMINAL_PROMPT=0"
@@ -196,11 +196,11 @@ codex_env_tmp="$(mktemp)"
   echo "GIT_COMMITTER_NAME=${git_author_name}"
   echo "GIT_AUTHOR_EMAIL=${git_author_email}"
   echo "GIT_COMMITTER_EMAIL=${git_author_email}"
-  if [[ -n "${OPENCODE_PROVIDER_ID:-}" ]]; then
-    echo "OPENCODE_PROVIDER_ID=${OPENCODE_PROVIDER_ID}"
+  if [[ -n "${CODEX_PROVIDER_ID:-}" ]]; then
+    echo "CODEX_PROVIDER_ID=${CODEX_PROVIDER_ID}"
   fi
-  if [[ -n "${OPENCODE_MODEL_ID:-}" ]]; then
-    echo "OPENCODE_MODEL_ID=${OPENCODE_MODEL_ID}"
+  if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
+    echo "CODEX_MODEL_ID=${CODEX_MODEL_ID}"
   fi
 } >"$codex_env_tmp"
 sudo install -m 600 -o root -g root "$codex_env_tmp" "$CONFIG_DIR/codex.env"
@@ -221,8 +221,8 @@ if [[ "$PERSIST_SECRETS" == "true" ]]; then
   has_secret_entry=0
   for key in "${SECRET_ENV_KEYS[@]}"; do
     value="${!key:-}"
-    if [[ -z "$value" && -f "$OPENCODE_SECRET_ENV_FILE" ]]; then
-      value="$(sed -n "s/^${key}=//p" "$OPENCODE_SECRET_ENV_FILE" | head -n 1)"
+    if [[ -z "$value" && -f "$CODEX_SECRET_ENV_FILE" ]]; then
+      value="$(sed -n "s/^${key}=//p" "$CODEX_SECRET_ENV_FILE" | head -n 1)"
     fi
     if [[ -n "$value" ]]; then
       printf '%s=%s\n' "$key" "$value" >>"$codex_secret_env_tmp"
@@ -230,7 +230,7 @@ if [[ "$PERSIST_SECRETS" == "true" ]]; then
     fi
   done
   if [[ "$has_secret_entry" -eq 1 ]]; then
-    sudo install -m 600 -o root -g root "$codex_secret_env_tmp" "$OPENCODE_SECRET_ENV_FILE"
+    sudo install -m 600 -o root -g root "$codex_secret_env_tmp" "$CODEX_SECRET_ENV_FILE"
   fi
   rm -f "$codex_secret_env_tmp"
 else
@@ -252,17 +252,17 @@ a2a_env_tmp="$(mktemp)"
   echo "A2A_LOG_LEVEL=${A2A_LOG_LEVEL:-INFO}"
   echo "A2A_LOG_PAYLOADS=${A2A_LOG_PAYLOADS:-false}"
   echo "A2A_LOG_BODY_LIMIT=${A2A_LOG_BODY_LIMIT:-0}"
-  echo "OPENCODE_BASE_URL=http://${OPENCODE_BIND_HOST}:${OPENCODE_BIND_PORT}"
-  echo "OPENCODE_DIRECTORY=${WORKSPACE_DIR}"
-  echo "OPENCODE_TIMEOUT=${OPENCODE_TIMEOUT:-300}"
-  if [[ -n "${OPENCODE_TIMEOUT_STREAM:-}" ]]; then
-    echo "OPENCODE_TIMEOUT_STREAM=${OPENCODE_TIMEOUT_STREAM}"
+  echo "CODEX_BASE_URL=http://${CODEX_BIND_HOST}:${CODEX_BIND_PORT}"
+  echo "CODEX_DIRECTORY=${WORKSPACE_DIR}"
+  echo "CODEX_TIMEOUT=${CODEX_TIMEOUT:-300}"
+  if [[ -n "${CODEX_TIMEOUT_STREAM:-}" ]]; then
+    echo "CODEX_TIMEOUT_STREAM=${CODEX_TIMEOUT_STREAM}"
   fi
-  if [[ -n "${OPENCODE_PROVIDER_ID:-}" ]]; then
-    echo "OPENCODE_PROVIDER_ID=${OPENCODE_PROVIDER_ID}"
+  if [[ -n "${CODEX_PROVIDER_ID:-}" ]]; then
+    echo "CODEX_PROVIDER_ID=${CODEX_PROVIDER_ID}"
   fi
-  if [[ -n "${OPENCODE_MODEL_ID:-}" ]]; then
-    echo "OPENCODE_MODEL_ID=${OPENCODE_MODEL_ID}"
+  if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
+    echo "CODEX_MODEL_ID=${CODEX_MODEL_ID}"
   fi
 } >"$a2a_env_tmp"
 sudo install -m 600 -o root -g root "$a2a_env_tmp" "$CONFIG_DIR/a2a.env"

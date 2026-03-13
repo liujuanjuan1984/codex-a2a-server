@@ -5,14 +5,14 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor
-from codex_a2a_serve.codex_client import OpencodeClient
+from codex_a2a_server.agent import CodexAgentExecutor
+from codex_a2a_server.codex_client import CodexClient
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
 @pytest.mark.asyncio
 async def test_cancel_interrupts_running_execute_and_keeps_queue_open():
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=CodexClient)
     send_started = asyncio.Event()
     send_cancelled = asyncio.Event()
 
@@ -39,7 +39,7 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open():
     client.send_message.side_effect = send_message
     configure_mock_client_runtime(client)
 
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    executor = CodexAgentExecutor(client, streaming_enabled=False)
 
     execute_context = make_request_context_mock(
         task_id="task-1",
@@ -80,7 +80,7 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open():
 
 @pytest.mark.asyncio
 async def test_cancel_does_not_block_with_real_event_queue() -> None:
-    executor = OpencodeAgentExecutor(MagicMock(), streaming_enabled=False)
+    executor = CodexAgentExecutor(MagicMock(), streaming_enabled=False)
     context = make_request_context_mock(
         task_id=None,
         context_id=None,
