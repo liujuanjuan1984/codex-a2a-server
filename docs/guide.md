@@ -82,7 +82,12 @@ Compatibility note:
   `part.updated` arrives. `text` and `reasoning` chunks are emitted as
   `TextPart`, while `tool_call` chunks are emitted as `DataPart` with a
   normalized structured payload (for example `tool`, `call_id`, `status`,
-  `input`, `output`, `error`). Final status event metadata may include
+  `input`, `output`, `error`). To avoid character-level event floods, the
+  service performs light server-side aggregation before emitting `text` and
+  `reasoning` updates: `text` flushes at `120 chars or 200ms`, `reasoning`
+  flushes at `240 chars or 350ms`, and both flush immediately on block
+  switches, `tool_call`, and request completion boundaries. Final status event
+  metadata may include
   normalized token usage at `metadata.shared.usage` with fields like
   `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
   Interrupt lifecycle is explicit: asked events (`permission.asked` /

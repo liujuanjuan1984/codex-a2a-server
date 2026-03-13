@@ -3,8 +3,9 @@ import asyncio
 import pytest
 from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from codex_a2a_serve.agent import OpencodeAgentExecutor, _extract_interrupt_resolved_event
+from codex_a2a_serve.agent import OpencodeAgentExecutor
 from codex_a2a_serve.codex_client import OpencodeMessage
+from codex_a2a_serve.streaming import extract_interrupt_resolved_event
 from tests.helpers import DummyEventQueue, make_request_context, make_settings
 
 
@@ -13,12 +14,14 @@ class DummyStreamingClient:
         self,
         *,
         stream_events_payload: list[dict],
+        stream_event_delays: list[float] | None = None,
         response_text: str,
         response_message_id: str | None = "msg-1",
         response_raw: dict | None = None,
         send_delay: float = 0.02,
     ) -> None:
         self._stream_events_payload = stream_events_payload
+        self._stream_event_delays = stream_event_delays or [0.0] * len(stream_events_payload)
         self._response_text = response_text
         self._response_message_id = response_message_id
         self._response_raw = response_raw or {}
@@ -64,10 +67,12 @@ class DummyStreamingClient:
 
     async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
         del directory
-        for event in self._stream_events_payload:
+        for delay, event in zip(
+            self._stream_event_delays, self._stream_events_payload, strict=False
+        ):
             if stop_event and stop_event.is_set():
                 break
-            await asyncio.sleep(0)
+            await asyncio.sleep(delay)
             yield event
 
     def remember_interrupt_request(self, *, request_id: str, session_id: str) -> None:
@@ -599,10 +604,10 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def test_extract_interrupt_resolved_event_accepts_request_id_aliases() -> None:
-    legacy = _extract_interrupt_resolved_event(
+    legacy = extract_interrupt_resolved_event(
         {"type": "permission.replied", "properties": {"requestID": "perm-1"}}
     )
-    modern = _extract_interrupt_resolved_event(
+    modern = extract_interrupt_resolved_event(
         {"type": "permission.replied", "properties": {"id": "perm-2"}}
     )
     assert legacy == {
@@ -880,6 +885,48 @@ async def test_streaming_supports_message_part_delta_events() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_aggregates_small_text_deltas_into_single_update() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="",
+                part_id="prt-text-agg",
+                text="",
+            ),
+            _delta_event(session_id="ses-1", part_id="prt-text-agg", delta="你"),
+            _delta_event(session_id="ses-1", part_id="prt-text-agg", delta="好"),
+            _delta_event(session_id="ses-1", part_id="prt-text-agg", delta="，"),
+            _delta_event(session_id="ses-1", part_id="prt-text-agg", delta="世"),
+            _delta_event(session_id="ses-1", part_id="prt-text-agg", delta="界"),
+        ],
+        response_text="你好，世界",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-text-agg",
+            context_id="ctx-text-agg",
+            text="go",
+        ),
+        queue,
+    )
+
+    text_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "text"
+    ]
+    assert len(text_updates) == 1
+    assert _part_text(text_updates[0]) == "你好，世界"
+
+
+@pytest.mark.asyncio
 async def test_streaming_emits_tool_call_delta_events_as_data_parts() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
@@ -960,6 +1007,56 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+
+
+@pytest.mark.asyncio
+async def test_streaming_flushes_reasoning_buffer_after_time_threshold() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="reasoning",
+                delta="",
+                part_id="prt-reasoning-timer",
+                text="",
+            ),
+            _delta_event(
+                session_id="ses-1",
+                part_id="prt-reasoning-timer",
+                delta="a" * 120,
+            ),
+            _delta_event(
+                session_id="ses-1",
+                part_id="prt-reasoning-timer",
+                delta="b" * 10,
+            ),
+        ],
+        stream_event_delays=[0.0, 0.0, 0.4],
+        response_text="answer",
+        send_delay=0.6,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-reasoning-timer",
+            context_id="ctx-reasoning-timer",
+            text="go",
+        ),
+        queue,
+    )
+
+    reasoning_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "reasoning"
+    ]
+    assert len(reasoning_updates) == 2
+    assert _part_text(reasoning_updates[0]) == "a" * 120
+    assert _part_text(reasoning_updates[1]) == "b" * 10
 
 
 @pytest.mark.asyncio

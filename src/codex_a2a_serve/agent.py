@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
 import uuid
-from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +14,9 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
     Role,
     Task,
-    TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
@@ -31,133 +25,22 @@ from a2a.types import (
 
 from .codex_client import OpencodeClient
 from .extension_contracts import SHARED_METADATA_NAMESPACE
+from .output_mapping import (
+    build_assistant_message,
+    build_history,
+    build_output_metadata,
+    enqueue_artifact_update,
+    extract_token_usage,
+    merge_token_usage,
+)
+from .streaming import (
+    BlockType,
+    StreamOutputState,
+    build_stream_artifact_metadata,
+    consume_codex_stream,
+)
 
 logger = logging.getLogger(__name__)
-
-_INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
-_INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}
-
-
-class BlockType(str, Enum):
-    TEXT = "text"
-    REASONING = "reasoning"
-    TOOL_CALL = "tool_call"
-
-
-@dataclass(frozen=True)
-class _NormalizedStreamChunk:
-    part: TextPart | DataPart
-    content_key: str
-    append: bool
-    block_type: BlockType
-    source: str
-    message_id: str | None
-    role: str | None
-
-
-@dataclass(frozen=True)
-class _PendingDelta:
-    field: str
-    delta: str
-    message_id: str | None
-
-
-@dataclass
-class _StreamPartState:
-    block_type: BlockType
-    message_id: str | None
-    role: str | None
-    buffer: str = ""
-    saw_delta: bool = False
-
-
-@dataclass
-class _StreamOutputState:
-    user_text: str
-    stable_message_id: str
-    event_id_namespace: str
-    content_buffers: dict[BlockType, str] = field(default_factory=dict)
-    token_usage: dict[str, Any] | None = None
-    pending_interrupt_request_ids: set[str] = field(default_factory=set)
-    saw_any_chunk: bool = False
-    emitted_stream_chunk: bool = False
-    sequence: int = 0
-
-    def matches_expected_message(self, message_id: str | None) -> bool:
-        return True
-
-    def should_drop_initial_user_echo(
-        self,
-        text: str,
-        *,
-        block_type: BlockType,
-        role: str | None,
-    ) -> bool:
-        if role is not None:
-            return False
-        if block_type != BlockType.TEXT:
-            return False
-        if self.saw_any_chunk:
-            return False
-        user_text = self.user_text.strip()
-        return bool(user_text) and text.strip() == user_text
-
-    def register_chunk(
-        self, *, block_type: BlockType, content_key: str, append: bool
-    ) -> tuple[bool, bool]:
-        previous = self.content_buffers.get(block_type, "")
-        next_value = f"{previous}{content_key}" if append else content_key
-        if next_value == previous:
-            return False, False
-        self.content_buffers[block_type] = next_value
-        self.saw_any_chunk = True
-        # Single-artifact stream must stay append-only after the first emitted chunk.
-        effective_append = self.emitted_stream_chunk
-        self.emitted_stream_chunk = True
-        return True, effective_append
-
-    def should_emit_final_snapshot(self, text: str) -> bool:
-        if not text.strip():
-            return False
-        existing = self.content_buffers.get(BlockType.TEXT, "")
-        if existing.strip() == text.strip():
-            return False
-        self.content_buffers[BlockType.TEXT] = text
-        self.saw_any_chunk = True
-        return True
-
-    def next_sequence(self) -> int:
-        self.sequence += 1
-        return self.sequence
-
-    def resolve_message_id(self, message_id: str | None) -> str:
-        if isinstance(message_id, str):
-            normalized = message_id.strip()
-            if normalized:
-                return normalized
-        return self.stable_message_id
-
-    def build_event_id(self, sequence: int) -> str:
-        return f"{self.event_id_namespace}:{sequence}"
-
-    def ingest_token_usage(self, usage: Mapping[str, Any] | None) -> None:
-        self.token_usage = _merge_token_usage(self.token_usage, usage)
-
-    def mark_interrupt_pending(self, request_id: str) -> bool:
-        normalized = request_id.strip()
-        if not normalized:
-            return False
-        if normalized in self.pending_interrupt_request_ids:
-            return False
-        self.pending_interrupt_request_ids.add(normalized)
-        return True
-
-    def clear_interrupt_pending(self, request_id: str) -> bool:
-        normalized = request_id.strip()
-        if not normalized or normalized not in self.pending_interrupt_request_ids:
-            return False
-        self.pending_interrupt_request_ids.discard(normalized)
-        return True
 
 
 class _TTLCache:
@@ -364,12 +247,13 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
 
         stream_artifact_id = f"{task_id}:stream"
-        stream_state = _StreamOutputState(
+        stream_state = StreamOutputState(
             user_text=user_text,
             stable_message_id=f"{task_id}:{context_id}:assistant",
             event_id_namespace=f"{task_id}:{context_id}:{stream_artifact_id}",
         )
         stop_event = asyncio.Event()
+        stream_completion_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
         pending_preferred_claim = False
         session_lock: asyncio.Lock | None = None
@@ -395,7 +279,8 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             if streaming_request:
                 stream_task = asyncio.create_task(
-                    self._consume_codex_stream(
+                    consume_codex_stream(
+                        client=self._client,
                         session_id=session_id,
                         task_id=task_id,
                         context_id=context_id,
@@ -403,6 +288,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                         stream_state=stream_state,
                         event_queue=event_queue,
                         stop_event=stop_event,
+                        completion_event=stream_completion_event,
+                        logger=logger,
                         directory=directory,
                     )
                 )
@@ -434,8 +321,8 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             response_text = response.text or ""
             resolved_message_id = stream_state.resolve_message_id(response.message_id)
-            resolved_token_usage = _merge_token_usage(
-                _extract_token_usage(response.raw),
+            resolved_token_usage = merge_token_usage(
+                extract_token_usage(response.raw),
                 stream_state.token_usage,
             )
             logger.debug(
@@ -446,9 +333,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                 response_text,
             )
             if streaming_request:
+                stream_completion_event.set()
+                if stream_task:
+                    await stream_task
+                    stream_task = None
                 if stream_state.should_emit_final_snapshot(response_text):
                     sequence = stream_state.next_sequence()
-                    await _enqueue_artifact_update(
+                    await enqueue_artifact_update(
                         event_queue=event_queue,
                         task_id=task_id,
                         context_id=context_id,
@@ -456,7 +347,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         part=TextPart(text=response_text),
                         append=stream_state.emitted_stream_chunk,
                         last_chunk=True,
-                        artifact_metadata=_build_stream_artifact_metadata(
+                        artifact_metadata=build_stream_artifact_metadata(
                             block_type=BlockType.TEXT,
                             source="final_snapshot",
                             message_id=resolved_message_id,
@@ -472,7 +363,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                             state=TaskState.input_required,
                         ),
                         final=True,
-                        metadata=_build_output_metadata(
+                        metadata=build_output_metadata(
                             session_id=response.session_id,
                             usage=resolved_token_usage,
                             stream={
@@ -485,7 +376,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 )
             else:
                 response_text = response_text or "(No text content returned by Codex.)"
-                assistant_message = _build_assistant_message(
+                assistant_message = build_assistant_message(
                     task_id=task_id,
                     context_id=context_id,
                     text=response_text,
@@ -496,14 +387,14 @@ class OpencodeAgentExecutor(AgentExecutor):
                     name="response",
                     parts=[TextPart(text=response_text)],
                 )
-                history = _build_history(context)
+                history = build_history(context)
                 task = Task(
                     id=task_id,
                     context_id=context_id,
                     status=TaskStatus(state=TaskState.input_required),
                     history=history,
                     artifacts=[artifact],
-                    metadata=_build_output_metadata(
+                    metadata=build_output_metadata(
                         session_id=response.session_id,
                         usage=resolved_token_usage,
                     ),
@@ -762,7 +653,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             context_id=context_id,
         )
         if streaming_request:
-            await _enqueue_artifact_update(
+            await enqueue_artifact_update(
                 event_queue=event_queue,
                 task_id=task_id,
                 context_id=context_id,
@@ -799,1020 +690,6 @@ class OpencodeAgentExecutor(AgentExecutor):
         # JSON-RPC transport sets method in call context state.
         method = call_context.state.get("method")
         return method == "message/stream"
-
-    async def _consume_codex_stream(
-        self,
-        *,
-        session_id: str,
-        task_id: str,
-        context_id: str,
-        artifact_id: str,
-        stream_state: _StreamOutputState,
-        event_queue: EventQueue,
-        stop_event: asyncio.Event,
-        directory: str | None = None,
-    ) -> None:
-        part_states: dict[str, _StreamPartState] = {}
-        pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
-        backoff = 0.5
-        max_backoff = 5.0
-
-        async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
-            for chunk in chunks:
-                if not stream_state.matches_expected_message(chunk.message_id):
-                    continue
-                resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
-                if isinstance(chunk.part, TextPart):
-                    if stream_state.should_drop_initial_user_echo(
-                        chunk.part.text,
-                        block_type=chunk.block_type,
-                        role=chunk.role,
-                    ):
-                        continue
-                should_emit, effective_append = stream_state.register_chunk(
-                    block_type=chunk.block_type,
-                    content_key=chunk.content_key,
-                    append=chunk.append,
-                )
-                if not should_emit:
-                    continue
-                sequence = stream_state.next_sequence()
-                await _enqueue_artifact_update(
-                    event_queue=event_queue,
-                    task_id=task_id,
-                    context_id=context_id,
-                    artifact_id=artifact_id,
-                    part=chunk.part,
-                    append=effective_append,
-                    last_chunk=False,
-                    artifact_metadata=_build_stream_artifact_metadata(
-                        block_type=chunk.block_type,
-                        source=chunk.source,
-                        message_id=resolved_message_id,
-                        role=chunk.role,
-                        sequence=sequence,
-                        event_id=stream_state.build_event_id(sequence),
-                    ),
-                )
-                logger.debug(
-                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s text=%s",
-                    task_id,
-                    session_id,
-                    chunk.block_type,
-                    effective_append,
-                    (
-                        chunk.part.text
-                        if isinstance(chunk.part, TextPart)
-                        else _serialize_tool_payload(chunk.part.data)
-                    ),
-                )
-
-        async def _emit_interrupt_status(
-            *,
-            state: TaskState,
-            request_id: str,
-            interrupt_type: str,
-            details: Mapping[str, Any],
-            phase: str,
-            resolution: str | None = None,
-            codex_private: Mapping[str, Any] | None = None,
-        ) -> None:
-            sequence = stream_state.next_sequence()
-            interrupt_payload: dict[str, Any] = {
-                "request_id": request_id,
-                "type": interrupt_type,
-                "phase": phase,
-                "details": dict(details),
-            }
-            if resolution is not None:
-                interrupt_payload["resolution"] = resolution
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(state=state),
-                    final=False,
-                    metadata=_build_output_metadata(
-                        session_id=session_id,
-                        stream={
-                            "message_id": stream_state.resolve_message_id(None),
-                            "event_id": stream_state.build_event_id(sequence),
-                            "source": "interrupt",
-                            "sequence": sequence,
-                        },
-                        interrupt=interrupt_payload,
-                        codex_private=(
-                            {"interrupt": dict(codex_private)} if codex_private else None
-                        ),
-                    ),
-                )
-            )
-
-        def _new_chunk(
-            *,
-            part: TextPart | DataPart,
-            content_key: str,
-            append: bool,
-            block_type: BlockType,
-            source: str,
-            message_id: str | None,
-            role: str | None,
-        ) -> _NormalizedStreamChunk:
-            return _NormalizedStreamChunk(
-                part=part,
-                content_key=content_key,
-                append=append,
-                block_type=block_type,
-                source=source,
-                message_id=message_id,
-                role=role,
-            )
-
-        def _upsert_part_state(
-            *,
-            part_id: str,
-            part: Mapping[str, Any],
-            props: Mapping[str, Any],
-            role: str | None,
-            message_id: str | None,
-        ) -> _StreamPartState | None:
-            block_type = _resolve_stream_block_type(part, props)
-            if block_type is None:
-                return None
-            state = part_states.get(part_id)
-            if state is None:
-                state = _StreamPartState(
-                    block_type=block_type,
-                    message_id=message_id,
-                    role=role,
-                )
-                part_states[part_id] = state
-                return state
-            state.block_type = block_type
-            if role is not None:
-                state.role = role
-            if message_id:
-                state.message_id = message_id
-            return state
-
-        def _delta_chunks(
-            *,
-            state: _StreamPartState,
-            delta_text: str,
-            message_id: str | None,
-            source: str,
-        ) -> list[_NormalizedStreamChunk]:
-            if not delta_text:
-                return []
-            if message_id:
-                state.message_id = message_id
-            state.buffer = f"{state.buffer}{delta_text}"
-            state.saw_delta = True
-            return [
-                _new_chunk(
-                    part=TextPart(text=delta_text),
-                    content_key=delta_text,
-                    append=True,
-                    block_type=state.block_type,
-                    source=source,
-                    message_id=state.message_id,
-                    role=state.role,
-                )
-            ]
-
-        def _snapshot_chunks(
-            *,
-            state: _StreamPartState,
-            snapshot: str,
-            message_id: str | None,
-            part_id: str,
-        ) -> list[_NormalizedStreamChunk]:
-            if message_id:
-                state.message_id = message_id
-            previous = state.buffer
-            if snapshot == previous:
-                return []
-            if snapshot.startswith(previous):
-                delta_text = snapshot[len(previous) :]
-                state.buffer = snapshot
-                if not delta_text:
-                    return []
-                return [
-                    _new_chunk(
-                        part=TextPart(text=delta_text),
-                        content_key=delta_text,
-                        append=True,
-                        block_type=state.block_type,
-                        source="part_text_diff",
-                        message_id=state.message_id,
-                        role=state.role,
-                    )
-                ]
-            state.buffer = snapshot
-            logger.warning(
-                "Suppressing non-prefix snapshot rewrite "
-                "task_id=%s session_id=%s part_id=%s block_type=%s had_delta=%s",
-                task_id,
-                session_id,
-                part_id,
-                state.block_type.value,
-                state.saw_delta,
-            )
-            return []
-
-        def _tool_chunks(
-            *,
-            state: _StreamPartState,
-            part: Mapping[str, Any],
-            message_id: str | None,
-        ) -> list[_NormalizedStreamChunk]:
-            payload = _extract_tool_part_payload(part)
-            if payload is None:
-                return []
-            tool_chunk = _serialize_tool_payload(payload)
-            if message_id:
-                state.message_id = message_id
-            previous = state.buffer
-            if tool_chunk == previous:
-                return []
-            state.buffer = tool_chunk
-            content_key = tool_chunk if not previous else f"\n{tool_chunk}"
-            return [
-                _new_chunk(
-                    part=DataPart(data=payload),
-                    content_key=content_key,
-                    append=bool(previous),
-                    block_type=state.block_type,
-                    source="tool_part_update",
-                    message_id=state.message_id,
-                    role=state.role,
-                )
-            ]
-
-        def _tool_delta_chunks(
-            *,
-            state: _StreamPartState,
-            delta_text: str,
-            message_id: str | None,
-            source: str,
-        ) -> list[_NormalizedStreamChunk]:
-            payload = _parse_tool_payload(delta_text)
-            if payload is None:
-                logger.warning(
-                    "Suppressing invalid tool_call delta task_id=%s session_id=%s delta=%s",
-                    task_id,
-                    session_id,
-                    delta_text,
-                )
-                return []
-            tool_chunk = _serialize_tool_payload(payload)
-            if message_id:
-                state.message_id = message_id
-            previous = state.buffer
-            if tool_chunk == previous:
-                return []
-            state.buffer = tool_chunk
-            content_key = tool_chunk if not previous else f"\n{tool_chunk}"
-            return [
-                _new_chunk(
-                    part=DataPart(data=payload),
-                    content_key=content_key,
-                    append=bool(previous),
-                    block_type=state.block_type,
-                    source=source,
-                    message_id=state.message_id,
-                    role=state.role,
-                )
-            ]
-
-        try:
-            while not stop_event.is_set():
-                try:
-                    async for event in self._client.stream_events(
-                        stop_event=stop_event, directory=directory
-                    ):
-                        if stop_event.is_set():
-                            break
-                        event_type = event.get("type")
-                        if not isinstance(event_type, str):
-                            continue
-                        props = event.get("properties")
-                        if not isinstance(props, Mapping):
-                            continue
-                        event_session_id = _extract_event_session_id(event)
-                        if event_session_id == session_id:
-                            usage = _extract_token_usage(event)
-                            if usage is not None:
-                                stream_state.ingest_token_usage(usage)
-                            asked = _extract_interrupt_asked_event(event)
-                            if asked is not None:
-                                request_id = asked["request_id"]
-                                if stream_state.mark_interrupt_pending(request_id):
-                                    await _emit_interrupt_status(
-                                        state=TaskState.input_required,
-                                        request_id=request_id,
-                                        interrupt_type=asked["interrupt_type"],
-                                        details=asked["details"],
-                                        phase="asked",
-                                        codex_private=asked.get("codex_private"),
-                                    )
-                            resolved = _extract_interrupt_resolved_event(event)
-                            if resolved is not None:
-                                if stream_state.clear_interrupt_pending(resolved["request_id"]):
-                                    await _emit_interrupt_status(
-                                        state=TaskState.working,
-                                        request_id=resolved["request_id"],
-                                        interrupt_type=resolved["interrupt_type"],
-                                        details={},
-                                        phase="resolved",
-                                        resolution=resolved["resolution"],
-                                    )
-                        if event_type not in {"message.part.updated", "message.part.delta"}:
-                            continue
-                        part = props.get("part")
-                        if not isinstance(part, Mapping):
-                            part = {}
-                        if _extract_stream_session_id(part, props) != session_id:
-                            continue
-                        message_id = _extract_stream_message_id(part, props)
-                        part_id = _extract_stream_part_id(part, props)
-                        if not part_id:
-                            continue
-
-                        if event_type == "message.part.delta":
-                            field = props.get("field")
-                            delta = props.get("delta")
-                            if field != "text" or not isinstance(delta, str) or not delta:
-                                continue
-                            state = part_states.get(part_id)
-                            if state is None:
-                                pending_deltas[part_id].append(
-                                    _PendingDelta(
-                                        field=field,
-                                        delta=delta,
-                                        message_id=message_id,
-                                    )
-                                )
-                                continue
-                            if state.role in {"user", "system"}:
-                                continue
-                            if state.block_type == BlockType.TOOL_CALL:
-                                chunks = _tool_delta_chunks(
-                                    state=state,
-                                    delta_text=delta,
-                                    message_id=message_id,
-                                    source="delta_event",
-                                )
-                            else:
-                                chunks = _delta_chunks(
-                                    state=state,
-                                    delta_text=delta,
-                                    message_id=message_id,
-                                    source="delta_event",
-                                )
-                            if chunks:
-                                await _emit_chunks(chunks)
-                            continue
-
-                        role = _extract_stream_role(part, props)
-                        state = _upsert_part_state(
-                            part_id=part_id,
-                            part=part,
-                            props=props,
-                            role=role,
-                            message_id=message_id,
-                        )
-                        if state is None:
-                            pending_deltas.pop(part_id, None)
-                            continue
-                        if state.role in {"user", "system"}:
-                            pending_deltas.pop(part_id, None)
-                            continue
-
-                        chunks: list[_NormalizedStreamChunk] = []
-                        pending = pending_deltas.pop(part_id, [])
-                        for buffered in pending:
-                            if buffered.field != "text":
-                                continue
-                            if state.block_type == BlockType.TOOL_CALL:
-                                chunks.extend(
-                                    _tool_delta_chunks(
-                                        state=state,
-                                        delta_text=buffered.delta,
-                                        message_id=buffered.message_id,
-                                        source="delta_event_buffered",
-                                    )
-                                )
-                            else:
-                                chunks.extend(
-                                    _delta_chunks(
-                                        state=state,
-                                        delta_text=buffered.delta,
-                                        message_id=buffered.message_id,
-                                        source="delta_event_buffered",
-                                    )
-                                )
-
-                        delta = props.get("delta")
-                        if isinstance(delta, str) and delta:
-                            if state.block_type == BlockType.TOOL_CALL:
-                                chunks.extend(
-                                    _tool_delta_chunks(
-                                        state=state,
-                                        delta_text=delta,
-                                        message_id=message_id,
-                                        source="delta",
-                                    )
-                                )
-                            else:
-                                chunks.extend(
-                                    _delta_chunks(
-                                        state=state,
-                                        delta_text=delta,
-                                        message_id=message_id,
-                                        source="delta",
-                                    )
-                                )
-                        elif state.block_type == BlockType.TOOL_CALL:
-                            chunks.extend(
-                                _tool_chunks(
-                                    state=state,
-                                    part=part,
-                                    message_id=message_id,
-                                )
-                            )
-                        elif isinstance(part.get("text"), str):
-                            chunks.extend(
-                                _snapshot_chunks(
-                                    state=state,
-                                    snapshot=part["text"],
-                                    message_id=message_id,
-                                    part_id=part_id,
-                                )
-                            )
-
-                        if chunks:
-                            await _emit_chunks(chunks)
-
-                    break
-                except Exception:
-                    if stop_event.is_set():
-                        break
-                    logger.exception("Codex event stream failed; retrying")
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, max_backoff)
-        except Exception:
-            logger.exception("Codex event stream failed")
-
-
-def _build_assistant_message(
-    task_id: str,
-    context_id: str,
-    text: str,
-    *,
-    message_id: str | None = None,
-) -> Message:
-    return Message(
-        message_id=message_id or str(uuid.uuid4()),
-        role=Role.agent,
-        parts=[TextPart(text=text)],
-        task_id=task_id,
-        context_id=context_id,
-    )
-
-
-async def _enqueue_artifact_update(
-    *,
-    event_queue: EventQueue,
-    task_id: str,
-    context_id: str,
-    artifact_id: str,
-    part: TextPart | DataPart,
-    append: bool | None,
-    last_chunk: bool | None,
-    artifact_metadata: Mapping[str, Any] | None = None,
-    event_metadata: Mapping[str, Any] | None = None,
-) -> None:
-    normalized_last_chunk = True if last_chunk is True else None
-    artifact = Artifact(
-        artifact_id=artifact_id,
-        parts=[part],
-        metadata=dict(artifact_metadata) if artifact_metadata else None,
-    )
-    await event_queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id=task_id,
-            context_id=context_id,
-            artifact=artifact,
-            append=append,
-            last_chunk=normalized_last_chunk,
-            metadata=dict(event_metadata) if event_metadata else None,
-        )
-    )
-
-
-def _build_stream_artifact_metadata(
-    *,
-    block_type: BlockType,
-    source: str,
-    message_id: str | None = None,
-    role: str | None = None,
-    sequence: int | None = None,
-    event_id: str | None = None,
-) -> dict[str, Any]:
-    stream_meta: dict[str, Any] = {
-        "block_type": block_type.value,
-        "source": source,
-    }
-    if message_id:
-        stream_meta["message_id"] = message_id
-    if role:
-        stream_meta["role"] = role
-    if sequence is not None:
-        stream_meta["sequence"] = sequence
-    if event_id:
-        stream_meta["event_id"] = event_id
-    return {"shared": {"stream": stream_meta}}
-
-
-def _build_output_metadata(
-    *,
-    session_id: str | None = None,
-    session_title: str | None = None,
-    usage: Mapping[str, Any] | None = None,
-    stream: Mapping[str, Any] | None = None,
-    interrupt: Mapping[str, Any] | None = None,
-    codex_private: Mapping[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    metadata: dict[str, Any] = {}
-    shared_meta: dict[str, Any] = {}
-
-    if session_id:
-        session_meta: dict[str, Any] = {"id": session_id}
-        if session_title is not None:
-            session_meta["title"] = session_title
-        shared_meta["session"] = session_meta
-    if usage is not None:
-        shared_meta["usage"] = dict(usage)
-    if stream is not None:
-        shared_meta["stream"] = dict(stream)
-    if interrupt is not None:
-        shared_meta["interrupt"] = dict(interrupt)
-    if shared_meta:
-        metadata[SHARED_METADATA_NAMESPACE] = shared_meta
-    if codex_private:
-        metadata["codex"] = dict(codex_private)
-    return metadata or None
-
-
-def _coerce_number(value: Any) -> int | float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if value.is_integer():
-            return int(value)
-        return value
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    if not normalized:
-        return None
-    try:
-        if "." in normalized or "e" in normalized.lower():
-            parsed = float(normalized)
-            if parsed.is_integer():
-                return int(parsed)
-            return parsed
-        return int(normalized)
-    except ValueError:
-        return None
-
-
-def _extract_usage_from_info_like(info: Mapping[str, Any]) -> dict[str, Any] | None:
-    tokens = info.get("tokens")
-    if not isinstance(tokens, Mapping):
-        return None
-
-    usage: dict[str, Any] = {}
-    raw: dict[str, Any] = {"tokens": dict(tokens)}
-
-    input_tokens = _coerce_number(tokens.get("input"))
-    if input_tokens is not None:
-        usage["input_tokens"] = input_tokens
-
-    output_tokens = _coerce_number(tokens.get("output"))
-    if output_tokens is not None:
-        usage["output_tokens"] = output_tokens
-
-    total_tokens = _coerce_number(tokens.get("total"))
-    if total_tokens is not None:
-        usage["total_tokens"] = total_tokens
-    elif input_tokens is not None and output_tokens is not None:
-        usage["total_tokens"] = input_tokens + output_tokens
-
-    reasoning_tokens = _coerce_number(tokens.get("reasoning"))
-    if reasoning_tokens is not None:
-        usage["reasoning_tokens"] = reasoning_tokens
-
-    cache = tokens.get("cache")
-    if isinstance(cache, Mapping):
-        cache_usage: dict[str, Any] = {}
-        cache_read = _coerce_number(cache.get("read"))
-        if cache_read is not None:
-            cache_usage["read_tokens"] = cache_read
-        cache_write = _coerce_number(cache.get("write"))
-        if cache_write is not None:
-            cache_usage["write_tokens"] = cache_write
-        if cache_usage:
-            usage["cache_tokens"] = cache_usage
-
-    cost = _coerce_number(info.get("cost"))
-    if cost is not None:
-        usage["cost"] = cost
-        raw["cost"] = cost
-
-    if not usage:
-        return None
-    usage["raw"] = raw
-    return usage
-
-
-def _extract_token_usage(payload: Any) -> dict[str, Any] | None:
-    if not isinstance(payload, Mapping):
-        return None
-
-    candidates: list[Mapping[str, Any]] = []
-    info = payload.get("info")
-    if isinstance(info, Mapping):
-        candidates.append(info)
-
-    props = payload.get("properties")
-    if isinstance(props, Mapping):
-        props_info = props.get("info")
-        if isinstance(props_info, Mapping):
-            candidates.append(props_info)
-        part = props.get("part")
-        if isinstance(part, Mapping):
-            candidates.append(part)
-
-    for candidate in candidates:
-        usage = _extract_usage_from_info_like(candidate)
-        if usage is not None:
-            return usage
-    return None
-
-
-def _merge_token_usage(
-    base: Mapping[str, Any] | None,
-    incoming: Mapping[str, Any] | None,
-) -> dict[str, Any] | None:
-    if base is None and incoming is None:
-        return None
-    merged: dict[str, Any] = dict(base) if base else {}
-    if incoming:
-        for key, value in incoming.items():
-            if value is None:
-                continue
-            if key == "raw" and isinstance(value, Mapping):
-                existing = merged.get("raw")
-                if isinstance(existing, Mapping):
-                    merged["raw"] = {**dict(existing), **dict(value)}
-                else:
-                    merged["raw"] = dict(value)
-                continue
-            merged[key] = value
-    return merged or None
-
-
-def _normalize_role(role: Any) -> str | None:
-    if not isinstance(role, str):
-        return None
-    value = role.strip().lower()
-    if not value:
-        return None
-    if value.startswith("role_"):
-        value = value[5:]
-    if value in {"assistant", "agent", "model", "ai"}:
-        return "agent"
-    if value in {"user", "human"}:
-        return "user"
-    if value == "system":
-        return "system"
-    return value
-
-
-def _extract_stream_role(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    role = part.get("role") or props.get("role")
-    if role is None:
-        message = props.get("message")
-        if isinstance(message, Mapping):
-            role = message.get("role")
-    return _normalize_role(role)
-
-
-def _extract_first_nonempty_string(
-    source: Mapping[str, Any] | None,
-    keys: tuple[str, ...],
-) -> str | None:
-    if not isinstance(source, Mapping):
-        return None
-    for key in keys:
-        value = source.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
-    return None
-
-
-def _extract_stream_session_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = _extract_first_nonempty_string(part, ("sessionID",))
-    if candidate:
-        return candidate
-    return _extract_first_nonempty_string(props, ("sessionID",))
-
-
-def _extract_event_session_id(event: Mapping[str, Any]) -> str | None:
-    props = event.get("properties")
-    if not isinstance(props, Mapping):
-        return None
-    direct = _extract_first_nonempty_string(props, ("sessionID",))
-    if direct:
-        return direct
-    info = props.get("info")
-    if isinstance(info, Mapping):
-        info_session_id = _extract_first_nonempty_string(info, ("sessionID",))
-        if info_session_id:
-            return info_session_id
-    part = props.get("part")
-    if isinstance(part, Mapping):
-        part_session_id = _extract_first_nonempty_string(part, ("sessionID",))
-        if part_session_id:
-            return part_session_id
-    return None
-
-
-def _extract_string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    result: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            continue
-        normalized = item.strip()
-        if normalized:
-            result.append(normalized)
-    return result
-
-
-def _extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
-    return _extract_first_nonempty_string(
-        props,
-        ("id",),
-    )
-
-
-def _extract_interrupt_resolved_request_id(props: Mapping[str, Any]) -> str | None:
-    return _extract_first_nonempty_string(
-        props,
-        ("requestID", "id"),
-    )
-
-
-def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
-    event_type = event.get("type")
-    if event_type not in _INTERRUPT_ASKED_EVENT_TYPES:
-        return None
-    props = event.get("properties")
-    if not isinstance(props, Mapping):
-        return None
-    request_id = _extract_interrupt_asked_request_id(props)
-    if not request_id:
-        return None
-    if event_type == "permission.asked":
-        details: dict[str, Any] = {
-            "permission": props.get("permission"),
-            "patterns": _extract_string_list(props.get("patterns")),
-            "always": _extract_string_list(props.get("always")),
-        }
-        codex_private: dict[str, Any] = {}
-        if isinstance(props.get("metadata"), Mapping):
-            codex_private["metadata"] = dict(props.get("metadata"))
-        tool = props.get("tool")
-        if isinstance(tool, Mapping):
-            codex_private["tool"] = dict(tool)
-        return {
-            "request_id": request_id,
-            "interrupt_type": "permission",
-            "details": details,
-            "codex_private": codex_private,
-        }
-    questions = props.get("questions")
-    details = {"questions": questions if isinstance(questions, list) else []}
-    codex_private = {}
-    tool = props.get("tool")
-    if isinstance(tool, Mapping):
-        codex_private["tool"] = dict(tool)
-    return {
-        "request_id": request_id,
-        "interrupt_type": "question",
-        "details": details,
-        "codex_private": codex_private,
-    }
-
-
-def _extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str] | None:
-    event_type = event.get("type")
-    if event_type not in _INTERRUPT_RESOLVED_EVENT_TYPES:
-        return None
-    props = event.get("properties")
-    if not isinstance(props, Mapping):
-        return None
-    request_id = _extract_interrupt_resolved_request_id(props)
-    if not request_id:
-        return None
-    if event_type == "permission.replied":
-        return {
-            "request_id": request_id,
-            "event_type": event_type,
-            "interrupt_type": "permission",
-            "resolution": "replied",
-        }
-    if event_type == "question.rejected":
-        return {
-            "request_id": request_id,
-            "event_type": event_type,
-            "interrupt_type": "question",
-            "resolution": "rejected",
-        }
-    return {
-        "request_id": request_id,
-        "event_type": event_type,
-        "interrupt_type": "question",
-        "resolution": "replied",
-    }
-
-
-def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = _extract_first_nonempty_string(part, ("messageID",))
-    if candidate:
-        return candidate
-    return _extract_first_nonempty_string(props, ("messageID",))
-
-
-def _extract_stream_part_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = _extract_first_nonempty_string(part, ("id",))
-    if candidate:
-        return candidate
-    return _extract_first_nonempty_string(props, ("partID",))
-
-
-def _extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    for value in (
-        part.get("type"),
-        part.get("kind"),
-        props.get("partType"),
-        props.get("part_type"),
-    ):
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized:
-                return normalized
-    return None
-
-
-def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
-    if not part_type:
-        return None
-    if part_type == "text":
-        return BlockType.TEXT
-    if part_type in {"reasoning", "thinking", "thought"}:
-        return BlockType.REASONING
-    if part_type in {
-        "tool",
-        "tool_call",
-        "toolcall",
-        "function_call",
-        "functioncall",
-        "action",
-    }:
-        return BlockType.TOOL_CALL
-    return None
-
-
-def _resolve_stream_block_type(
-    part: Mapping[str, Any], props: Mapping[str, Any]
-) -> BlockType | None:
-    explicit_part_type = _extract_stream_part_type(part, props)
-    if explicit_part_type is not None:
-        return _map_part_type_to_block_type(explicit_part_type)
-    return _classify_stream_block_type(part, props)
-
-
-def _classify_stream_block_type(
-    part: Mapping[str, Any], props: Mapping[str, Any]
-) -> BlockType | None:
-    candidates: list[str] = []
-    for value in (
-        part.get("block_type"),
-        props.get("block_type"),
-        part.get("channel"),
-        props.get("channel"),
-        part.get("kind"),
-        props.get("kind"),
-        props.get("type"),
-        props.get("deltaType"),
-        props.get("phase"),
-        props.get("name"),
-    ):
-        if isinstance(value, str) and value.strip():
-            candidates.append(value.strip().lower())
-
-    if any(
-        any(keyword in candidate for keyword in ("reason", "thinking", "thought"))
-        for candidate in candidates
-    ):
-        return BlockType.REASONING
-    if any(
-        any(
-            keyword in candidate
-            for keyword in (
-                "tool",
-                "function_call",
-                "functioncall",
-                "tool_call",
-                "toolcall",
-                "action",
-            )
-        )
-        for candidate in candidates
-    ):
-        return BlockType.TOOL_CALL
-    if any(
-        any(keyword in candidate for keyword in ("text", "answer", "final"))
-        for candidate in candidates
-    ):
-        return BlockType.TEXT
-    return None
-
-
-def _serialize_tool_payload(payload: Mapping[str, Any]) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None:
-    payload: dict[str, Any] = {}
-    for source_key in ("callID", "callId", "call_id"):
-        value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["call_id"] = normalized
-                break
-    for source_key in ("tool", "name"):
-        value = part.get(source_key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                payload["tool"] = normalized
-                break
-    state = part.get("state")
-    if isinstance(state, Mapping):
-        status = state.get("status")
-        if isinstance(status, str):
-            normalized = status.strip()
-            if normalized:
-                payload["status"] = normalized
-        for key in ("title", "subtitle", "input", "output", "error"):
-            value = state.get(key)
-            if value is not None:
-                payload[key] = value
-    if not payload:
-        return None
-    return payload
-
-
-def _parse_tool_payload(raw: str) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, Mapping):
-        return None
-    return dict(payload)
-
-
-def _build_history(context: RequestContext) -> list[Message]:
-    if context.current_task and context.current_task.history:
-        history = list(context.current_task.history)
-    else:
-        history = []
-        if context.message:
-            history.append(context.message)
-    # Do not append assistant message to history; it lives in status.message.
-    return history
 
 
 def _extract_namespaced_string_metadata(
