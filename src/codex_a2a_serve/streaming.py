@@ -531,11 +531,11 @@ async def consume_codex_stream(
         tool_chunk = serialize_tool_call_payload(payload)
         if message_id:
             state.message_id = message_id
-        if payload["kind"] == "state" and tool_chunk == state.last_tool_state_payload:
+        if payload.kind == "state" and tool_chunk == state.last_tool_state_payload:
             return []
         append = state.emitted_tool_chunks > 0
         state.emitted_tool_chunks += 1
-        if payload["kind"] == "state":
+        if payload.kind == "state":
             state.last_tool_state_payload = tool_chunk
         content_key = tool_chunk if not append else f"\n{tool_chunk}"
         return [
