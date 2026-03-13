@@ -78,6 +78,14 @@ Compatibility note:
   model / reasoning combination is visible.
 - Known high-risk combinations are blocked before startup. Currently this
   includes `reasoning_effort=xhigh` together with `gpt-5.1-codex*`.
+- `start` and `restart` create a new timestamped log file under
+  `logs/light/<instance>-YYYYMMDD-HHMMSS.log`.
+- `logs/light/<instance>.log` is kept as a stable alias to the latest launch,
+  so `tail -f logs/light/<instance>.log` remains a convenient default.
+- `restart` means `stop` the existing PID first, then `start` a fresh process;
+  it does not reload the old process in place.
+- `status` reports the actual log file for the currently running instance and,
+  when stopped, the most recent log path remembered by the script.
 
 ## Service Behavior
 

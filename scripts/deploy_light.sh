@@ -132,7 +132,9 @@ if [[ -z "$A2A_PUBLIC_URL" ]]; then
 fi
 
 PID_FILE="${PID_ROOT}/${INSTANCE}.pid"
-LOG_FILE="${LOG_ROOT}/${INSTANCE}.log"
+LOG_LINK="${LOG_ROOT}/${INSTANCE}.log"
+LOG_PATH_FILE="${PID_ROOT}/${INSTANCE}.logpath"
+LOG_FILE=""
 
 is_running() {
   if [[ ! -f "$PID_FILE" ]]; then
@@ -144,6 +146,17 @@ is_running() {
     return 1
   fi
   kill -0 "$pid" >/dev/null 2>&1
+}
+
+current_log_file() {
+  if [[ -f "$LOG_PATH_FILE" ]]; then
+    cat "$LOG_PATH_FILE" 2>/dev/null || true
+    return 0
+  fi
+  if [[ -L "$LOG_LINK" || -f "$LOG_LINK" ]]; then
+    printf '%s\n' "$LOG_LINK"
+    return 0
+  fi
 }
 
 read_local_codex_config_value() {
@@ -268,8 +281,18 @@ start_instance() {
   mkdir -p "$PID_ROOT" "$LOG_ROOT"
   if is_running; then
     echo "Instance '${INSTANCE}' is already running (pid=$(cat "$PID_FILE"))."
+    local current_log
+    current_log="$(current_log_file)"
+    if [[ -n "$current_log" ]]; then
+      echo "Log: ${current_log}"
+      echo "Latest log alias: ${LOG_LINK}"
+    fi
     exit 0
   fi
+
+  local start_stamp
+  start_stamp="$(date '+%Y%m%d-%H%M%S')"
+  LOG_FILE="${LOG_ROOT}/${INSTANCE}-${start_stamp}.log"
 
   (
     export A2A_HOST
@@ -312,10 +335,14 @@ start_instance() {
     exit 1
   fi
 
+  printf '%s\n' "$LOG_FILE" >"$LOG_PATH_FILE"
+  ln -sfn "$LOG_FILE" "$LOG_LINK"
+
   cat <<INFO
 Instance '${INSTANCE}' started.
 PID: ${pid}
 Log: ${LOG_FILE}
+Latest log alias: ${LOG_LINK}
 Agent Card: ${A2A_PUBLIC_URL}/.well-known/agent-card.json
 REST endpoint: ${A2A_PUBLIC_URL}/v1/message:send
 Workdir: ${WORKDIR}
@@ -345,12 +372,21 @@ stop_instance() {
 }
 
 status_instance() {
+  local current_log
+  current_log="$(current_log_file)"
   if is_running; then
     echo "Instance '${INSTANCE}' is running (pid=$(cat "$PID_FILE"))."
-    echo "Log: $LOG_FILE"
+    if [[ -n "$current_log" ]]; then
+      echo "Log: ${current_log}"
+      echo "Latest log alias: ${LOG_LINK}"
+    fi
     exit 0
   fi
   echo "Instance '${INSTANCE}' is not running."
+  if [[ -n "$current_log" ]]; then
+    echo "Last log: ${current_log}"
+    echo "Latest log alias: ${LOG_LINK}"
+  fi
   exit 1
 }
 
