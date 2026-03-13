@@ -122,7 +122,7 @@ GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERS
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `codex_provider_id`, `codex_model_id`, `codex_lsp`, `repo_url`, `repo_branch`, `codex_timeout`, `codex_timeout_stream`, `git_identity_name`, `git_identity_email`, `enable_secret_persistence`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `codex_provider_id`, `codex_model_id`, `repo_url`, `repo_branch`, `codex_timeout`, `codex_timeout_stream`, `git_identity_name`, `git_identity_email`, `enable_secret_persistence`, `update_a2a`, `force_restart`.
 
 Runtime secret requirements:
 
@@ -154,16 +154,6 @@ Minimal example:
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 ./scripts/deploy.sh project=alpha a2a_port=8010
-```
-
-LSP behavior:
-
-- Deployment default is `CODEX_LSP=false` (LSP disabled).
-- To enable LSP for one instance, pass `codex_lsp=true`:
-
-```bash
-GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh project=alpha codex_lsp=true
 ```
 
 Upgrade an existing instance after shared-code update:
@@ -278,10 +268,8 @@ Naming rule in the tables below:
 | `CODEX_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |
 | `CODEX_LOG_LEVEL` | - | Optional | `DEBUG` | Codex log level. |
 | `CODEX_EXTRA_ARGS` | - | Optional | empty | Extra Codex startup args. |
-| `CODEX_CONFIG_CONTENT` | - | Optional | empty | Wrapper-level Codex config JSON passed directly to the Codex launcher. |
 | `CODEX_PROVIDER_ID` | `codex_provider_id` | Optional | None | Written to `a2a.env`. |
 | `CODEX_MODEL_ID` | `codex_model_id` | Optional | None | Written to `a2a.env`. |
-| `CODEX_LSP` | `codex_lsp` | Optional | `false` | Global Codex LSP switch for deployed instance. Wrapper derives default `CODEX_CONFIG_CONTENT` from this value when `CODEX_CONFIG_CONTENT` is unset. |
 | `CODEX_TIMEOUT` | `codex_timeout` | Optional | `300` | Codex request timeout (seconds). |
 | `CODEX_TIMEOUT_STREAM` | `codex_timeout_stream` | Optional | None | Codex streaming timeout (seconds). |
 | `GIT_IDENTITY_NAME` | `git_identity_name` | Optional | `Codex-<project>` | Git author/committer name. |

@@ -10,7 +10,6 @@ CODEX_BIND_PORT="${CODEX_BIND_PORT:-4096}"
 CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
 CODEX_PROVIDER_ID="${CODEX_PROVIDER_ID:-}"
 CODEX_MODEL_ID="${CODEX_MODEL_ID:-}"
-CODEX_LSP="${CODEX_LSP:-false}"
 GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
 if [[ ! -x "$CODEX_BIN" ]]; then
@@ -26,25 +25,6 @@ if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
     exit 1
   fi
 fi
-
-if [[ -z "${CODEX_CONFIG_CONTENT:-}" ]]; then
-  case "${CODEX_LSP,,}" in
-    1|true|yes|on)
-      lsp_json=true
-      ;;
-    0|false|no|off|"")
-      lsp_json=false
-      ;;
-    *)
-      echo "Invalid CODEX_LSP value: ${CODEX_LSP} (expected true/false)" >&2
-      exit 1
-      ;;
-  esac
-  printf -v CODEX_CONFIG_CONTENT \
-    '{"$schema":"https://codex.ai/config.json","lsp":%s}' \
-    "$lsp_json"
-fi
-export CODEX_CONFIG_CONTENT
 
 cmd=("$CODEX_BIN" serve --log-level "$CODEX_LOG_LEVEL" --print-logs)
 

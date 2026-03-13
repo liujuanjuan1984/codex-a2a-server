@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy an isolated Codex + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [codex_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
+# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
 # Secret env vars are only required when persisting them during deploy or when setup actions need them.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
@@ -27,7 +27,6 @@ A2A_LOG_BODY_LIMIT_INPUT=""
 DATA_ROOT_INPUT=""
 CODEX_PROVIDER_ID_INPUT=""
 CODEX_MODEL_ID_INPUT=""
-CODEX_LSP_INPUT=""
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
 CODEX_TIMEOUT_INPUT=""
@@ -89,9 +88,6 @@ for arg in "$@"; do
     codex_model_id)
       CODEX_MODEL_ID_INPUT="$value"
       ;;
-    codex_lsp)
-      CODEX_LSP_INPUT="$value"
-      ;;
     repo_url)
       REPO_URL_INPUT="$value"
       ;;
@@ -136,7 +132,7 @@ Usage:
   [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
-  [codex_provider_id=<id>] [codex_model_id=<id>] [codex_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] \
+  [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
   [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -161,7 +157,6 @@ export_if_present() {
 
 export_if_present "CODEX_PROVIDER_ID" "$CODEX_PROVIDER_ID_INPUT"
 export_if_present "CODEX_MODEL_ID" "$CODEX_MODEL_ID_INPUT"
-export_if_present "CODEX_LSP" "$CODEX_LSP_INPUT"
 export_if_present "REPO_URL" "$REPO_URL_INPUT"
 export_if_present "REPO_BRANCH" "$REPO_BRANCH_INPUT"
 export_if_present "CODEX_TIMEOUT" "$CODEX_TIMEOUT_INPUT"
@@ -173,7 +168,6 @@ export_if_present "DATA_ROOT" "$DATA_ROOT_INPUT"
 export CODEX_BIND_HOST="${CODEX_BIND_HOST:-127.0.0.1}"
 export CODEX_LOG_LEVEL="${CODEX_LOG_LEVEL:-DEBUG}"
 export CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
-export CODEX_LSP="${CODEX_LSP:-false}"
 export ENABLE_SECRET_PERSISTENCE="${ENABLE_SECRET_PERSISTENCE:-false}"
 
 if [[ -n "$A2A_HOST_INPUT" ]]; then
