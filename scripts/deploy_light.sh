@@ -35,6 +35,7 @@ CODEX_TIMEOUT="${CODEX_TIMEOUT:-}"
 CODEX_TIMEOUT_STREAM="${CODEX_TIMEOUT_STREAM:-}"
 LOG_ROOT="${ROOT_DIR}/logs/light"
 PID_ROOT="${ROOT_DIR}/run/light"
+A2A_SERVER_BIN=""
 LOCAL_CODEX_MODEL=""
 LOCAL_CODEX_MODEL_REASONING_EFFORT=""
 EFFECTIVE_CODEX_MODEL=""
@@ -136,7 +137,7 @@ LOG_LINK="${LOG_ROOT}/${INSTANCE}.log"
 LOG_PATH_FILE="${PID_ROOT}/${INSTANCE}.logpath"
 LOG_FILE=""
 
-is_running() {
+read_pid_file() {
   if [[ ! -f "$PID_FILE" ]]; then
     return 1
   fi
@@ -145,7 +146,34 @@ is_running() {
   if [[ -z "$pid" ]]; then
     return 1
   fi
+  printf '%s\n' "$pid"
+}
+
+process_matches_instance() {
+  local pid="$1"
+  local environ_path="/proc/${pid}/environ"
+  if [[ -z "$pid" || ! -r "$environ_path" ]]; then
+    return 1
+  fi
+  if ! grep -zFx "CODEX_A2A_LIGHT_INSTANCE=${INSTANCE}" "$environ_path" >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! grep -zFx "CODEX_A2A_LIGHT_ROOT=${ROOT_DIR}" "$environ_path" >/dev/null 2>&1; then
+    return 1
+  fi
+}
+
+is_running() {
+  local pid
+  pid="$(read_pid_file)" || return 1
   kill -0 "$pid" >/dev/null 2>&1
+  process_matches_instance "$pid"
+}
+
+remove_pid_file_if_stale() {
+  if [[ -f "$PID_FILE" ]] && ! is_running; then
+    rm -f "$PID_FILE"
+  fi
 }
 
 current_log_file() {
@@ -220,11 +248,29 @@ resolve_effective_codex_config() {
   fi
 }
 
+resolve_a2a_server_bin() {
+  local local_bin="${ROOT_DIR}/.venv/bin/codex-a2a-server"
+  if [[ -x "$local_bin" ]]; then
+    A2A_SERVER_BIN="$local_bin"
+    return 0
+  fi
+
+  if command -v codex-a2a-server >/dev/null 2>&1; then
+    A2A_SERVER_BIN="$(command -v codex-a2a-server)"
+    return 0
+  fi
+
+  echo "codex-a2a-server binary not found. Expected ${local_bin} or codex-a2a-server in PATH." >&2
+  echo "Run uv sync --all-extras or install the package entrypoint before using deploy_light." >&2
+  exit 1
+}
+
 print_codex_config_summary() {
   echo "Codex config summary:"
   echo "  local config model: $(display_or_unset "$LOCAL_CODEX_MODEL")"
   echo "  local config reasoning_effort: $(display_or_unset "$LOCAL_CODEX_MODEL_REASONING_EFFORT")"
   echo "  effective instance model: ${EFFECTIVE_CODEX_MODEL}"
+  echo "  a2a server bin: ${A2A_SERVER_BIN}"
   if [[ -n "$EFFECTIVE_CODEX_REASONING_EFFORT" ]]; then
     echo "  effective instance reasoning_effort: ${EFFECTIVE_CODEX_REASONING_EFFORT}"
   else
@@ -258,8 +304,8 @@ require_start_prerequisites() {
     echo "workdir does not exist: $WORKDIR" >&2
     exit 1
   fi
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "uv not found in PATH." >&2
+  if ! command -v setsid >/dev/null 2>&1; then
+    echo "setsid not found in PATH." >&2
     exit 1
   fi
   if [[ "$CODEX_CLI_BIN" == */* ]]; then
@@ -271,16 +317,41 @@ require_start_prerequisites() {
     echo "codex binary not found in PATH: $CODEX_CLI_BIN" >&2
     exit 1
   fi
+  resolve_a2a_server_bin
   resolve_effective_codex_config
   print_codex_config_summary
   validate_codex_config
 }
 
+start_detached_server() {
+  nohup setsid bash -c '
+    set -euo pipefail
+    pid_file="$1"
+    shift
+    printf "%s\n" "$$" >"$pid_file"
+    exec "$@"
+  ' bash "$PID_FILE" "$A2A_SERVER_BIN" </dev/null >>"$LOG_FILE" 2>&1 &
+}
+
+wait_for_running_pid() {
+  local pid=""
+  for _ in $(seq 1 50); do
+    pid="$(read_pid_file 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && is_running; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
 start_instance() {
   require_start_prerequisites
   mkdir -p "$PID_ROOT" "$LOG_ROOT"
+  remove_pid_file_if_stale
   if is_running; then
-    echo "Instance '${INSTANCE}' is already running (pid=$(cat "$PID_FILE"))."
+    echo "Instance '${INSTANCE}' is already running (pid=$(read_pid_file))."
     local current_log
     current_log="$(current_log_file)"
     if [[ -n "$current_log" ]]; then
@@ -294,42 +365,42 @@ start_instance() {
   start_stamp="$(date '+%Y%m%d-%H%M%S')"
   LOG_FILE="${LOG_ROOT}/${INSTANCE}-${start_stamp}.log"
 
-  (
-    export A2A_HOST
-    export A2A_PORT
-    export A2A_PUBLIC_URL
-    export A2A_LOG_LEVEL
-    export A2A_STREAMING
-    export A2A_LOG_PAYLOADS
-    export A2A_LOG_BODY_LIMIT
-    export A2A_BEARER_TOKEN
-    export CODEX_CLI_BIN
-    export CODEX_DIRECTORY="$WORKDIR"
-    if [[ -n "$CODEX_MODEL" ]]; then
-      export CODEX_MODEL
-    fi
-    if [[ -n "$CODEX_MODEL_ID" ]]; then
-      export CODEX_MODEL_ID
-    fi
-    if [[ -n "$CODEX_MODEL_REASONING_EFFORT" ]]; then
-      export CODEX_MODEL_REASONING_EFFORT
-    fi
-    if [[ -n "$CODEX_PROVIDER_ID" ]]; then
-      export CODEX_PROVIDER_ID
-    fi
-    if [[ -n "$CODEX_TIMEOUT" ]]; then
-      export CODEX_TIMEOUT
-    fi
-    if [[ -n "$CODEX_TIMEOUT_STREAM" ]]; then
-      export CODEX_TIMEOUT_STREAM
-    fi
-    exec uv run codex-a2a-server
-  ) >>"$LOG_FILE" 2>&1 &
+  export A2A_HOST
+  export A2A_PORT
+  export A2A_PUBLIC_URL
+  export A2A_LOG_LEVEL
+  export A2A_STREAMING
+  export A2A_LOG_PAYLOADS
+  export A2A_LOG_BODY_LIMIT
+  export A2A_BEARER_TOKEN
+  export CODEX_CLI_BIN
+  export CODEX_DIRECTORY="$WORKDIR"
+  export CODEX_A2A_LIGHT_INSTANCE="$INSTANCE"
+  export CODEX_A2A_LIGHT_ROOT="$ROOT_DIR"
+  if [[ -n "$CODEX_MODEL" ]]; then
+    export CODEX_MODEL
+  fi
+  if [[ -n "$CODEX_MODEL_ID" ]]; then
+    export CODEX_MODEL_ID
+  fi
+  if [[ -n "$CODEX_MODEL_REASONING_EFFORT" ]]; then
+    export CODEX_MODEL_REASONING_EFFORT
+  fi
+  if [[ -n "$CODEX_PROVIDER_ID" ]]; then
+    export CODEX_PROVIDER_ID
+  fi
+  if [[ -n "$CODEX_TIMEOUT" ]]; then
+    export CODEX_TIMEOUT
+  fi
+  if [[ -n "$CODEX_TIMEOUT_STREAM" ]]; then
+    export CODEX_TIMEOUT_STREAM
+  fi
 
-  local pid="$!"
-  echo "$pid" >"$PID_FILE"
-  sleep 1
-  if ! kill -0 "$pid" >/dev/null 2>&1; then
+  rm -f "$PID_FILE"
+  start_detached_server
+
+  local pid
+  if ! pid="$(wait_for_running_pid)"; then
     echo "Failed to start instance '${INSTANCE}'. Check log: $LOG_FILE" >&2
     rm -f "$PID_FILE"
     exit 1
@@ -350,13 +421,14 @@ INFO
 }
 
 stop_instance() {
+  remove_pid_file_if_stale
   if ! is_running; then
     rm -f "$PID_FILE"
     echo "Instance '${INSTANCE}' is not running."
     return 0
   fi
   local pid
-  pid="$(cat "$PID_FILE")"
+  pid="$(read_pid_file)"
   kill "$pid" >/dev/null 2>&1 || true
   for _ in $(seq 1 30); do
     if ! kill -0 "$pid" >/dev/null 2>&1; then
@@ -373,10 +445,11 @@ stop_instance() {
 }
 
 status_instance() {
+  remove_pid_file_if_stale
   local current_log
   current_log="$(current_log_file)"
   if is_running; then
-    echo "Instance '${INSTANCE}' is running (pid=$(cat "$PID_FILE"))."
+    echo "Instance '${INSTANCE}' is running (pid=$(read_pid_file))."
     if [[ -n "$current_log" ]]; then
       echo "Log: ${current_log}"
       echo "Latest log alias: ${LOG_LINK}"
