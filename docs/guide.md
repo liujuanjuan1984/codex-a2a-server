@@ -65,7 +65,7 @@ Configuration note:
 
 ## Lightweight Deploy Inheritance
 
-- `scripts/deploy_light.sh` is designed for local/interactive quick start.
+- `scripts/deploy_light.sh` is a lightweight current-user foreground launcher.
 - It preserves already-exported `CODEX_*` shell variables when present.
 - By default it best-effort reads `~/.codex/config.toml` and inherits:
   - `model`
@@ -78,15 +78,65 @@ Configuration note:
   model / reasoning combination is visible.
 - Known high-risk combinations are blocked before startup. Currently this
   includes `reasoning_effort=xhigh` together with `gpt-5.1-codex*`.
-- `start` and `restart` create a new timestamped log file under
-  `logs/light/<instance>-YYYYMMDD-HHMMSS.log`.
-- `logs/light/<instance>.log` is kept as a stable alias to the latest launch,
-  so `tail -f logs/light/<instance>.log` remains a convenient default.
-- `restart` means `stop` the existing PID first, then `start` a fresh process;
-  it does not reload the old process in place. If the instance is not running,
-  `restart` falls through to a fresh `start`.
-- `status` reports the actual log file for the currently running instance and,
-  when stopped, the most recent log path remembered by the script.
+- `start` runs the service in the foreground and streams logs to stdout/stderr.
+- `deploy_light.sh` no longer manages `stop` / `status` / `restart` or
+  per-instance pid/log files.
+- If you need detached execution, restart policies, or log capture, run
+  `deploy_light.sh start ...` under `nohup`, `pm2`, `systemd`, or another
+  process manager.
+- `deploy_light.sh` is intentionally lighter than `deploy.sh`: it does not add
+  a supervisor, auto-restart policy, isolated Linux user, or permission
+  scaffolding. Use `deploy.sh` when you need a repository-managed service
+  lifecycle.
+
+Example `nohup` usage:
+
+```bash
+mkdir -p ./logs/light
+A2A_BEARER_TOKEN="$A2A_BEARER_TOKEN" \
+nohup ./scripts/deploy_light.sh start \
+  workdir=/abs/path/to/workdir \
+  instance=dev \
+  a2a_host=127.0.0.1 \
+  a2a_port=8000 \
+  a2a_public_url=http://127.0.0.1:8000 \
+  > ./logs/light/dev.out.log 2>&1 &
+echo $! > ./run/light/dev.pid
+```
+
+To stop a `nohup`-managed process, use the PID captured by your shell wrapper:
+
+```bash
+kill "$(cat ./run/light/dev.pid)"
+```
+
+Example `pm2` usage:
+
+```bash
+mkdir -p ./logs/light
+export A2A_BEARER_TOKEN="$A2A_BEARER_TOKEN"
+pm2 start ./scripts/deploy_light.sh \
+  --name codex-a2a-light-dev \
+  --interpreter bash \
+  --time \
+  --output ./logs/light/dev.out.log \
+  --error ./logs/light/dev.err.log \
+  -- start \
+  workdir=/abs/path/to/workdir \
+  instance=dev \
+  a2a_host=127.0.0.1 \
+  a2a_port=8000 \
+  a2a_public_url=http://127.0.0.1:8000
+```
+
+Useful `pm2` follow-up commands:
+
+```bash
+pm2 status codex-a2a-light-dev
+pm2 restart codex-a2a-light-dev
+pm2 logs codex-a2a-light-dev
+pm2 stop codex-a2a-light-dev
+```
 
 ## Service Behavior
 
