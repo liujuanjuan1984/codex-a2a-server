@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy an isolated Codex + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
+# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_stream_heartbeat_seconds=<seconds>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
 # Secret env vars are only required when persisting them during deploy or when setup actions need them.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
@@ -21,6 +21,7 @@ A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
 A2A_STREAMING_INPUT=""
+A2A_STREAM_HEARTBEAT_SECONDS_INPUT=""
 A2A_LOG_LEVEL_INPUT=""
 A2A_LOG_PAYLOADS_INPUT=""
 A2A_LOG_BODY_LIMIT_INPUT=""
@@ -72,6 +73,9 @@ for arg in "$@"; do
       ;;
     a2a_streaming)
       A2A_STREAMING_INPUT="$value"
+      ;;
+    a2a_stream_heartbeat_seconds)
+      A2A_STREAM_HEARTBEAT_SECONDS_INPUT="$value"
       ;;
     a2a_log_level)
       A2A_LOG_LEVEL_INPUT="$value"
@@ -131,7 +135,7 @@ if [[ -z "$PROJECT_NAME" ]]; then
 Usage:
   [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
-  [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
+  [a2a_streaming=<bool>] [a2a_stream_heartbeat_seconds=<seconds>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
   [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
   [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
@@ -196,10 +200,12 @@ fi
 
 export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
 export A2A_STREAMING="${A2A_STREAMING:-true}"
+export A2A_STREAM_HEARTBEAT_SECONDS="${A2A_STREAM_HEARTBEAT_SECONDS:-}"
 export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-false}"
 export A2A_LOG_BODY_LIMIT="${A2A_LOG_BODY_LIMIT:-0}"
 export_if_present "A2A_LOG_LEVEL" "$A2A_LOG_LEVEL_INPUT"
 export_if_present "A2A_STREAMING" "$A2A_STREAMING_INPUT"
+export_if_present "A2A_STREAM_HEARTBEAT_SECONDS" "$A2A_STREAM_HEARTBEAT_SECONDS_INPUT"
 export_if_present "A2A_LOG_PAYLOADS" "$A2A_LOG_PAYLOADS_INPUT"
 export_if_present "A2A_LOG_BODY_LIMIT" "$A2A_LOG_BODY_LIMIT_INPUT"
 export_if_present "ENABLE_SECRET_PERSISTENCE" "$ENABLE_SECRET_PERSISTENCE_INPUT"

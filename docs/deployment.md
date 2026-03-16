@@ -122,7 +122,7 @@ GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERS
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `codex_provider_id`, `codex_model_id`, `repo_url`, `repo_branch`, `codex_timeout`, `codex_timeout_stream`, `git_identity_name`, `git_identity_email`, `enable_secret_persistence`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_stream_heartbeat_seconds`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `codex_provider_id`, `codex_model_id`, `repo_url`, `repo_branch`, `codex_timeout`, `codex_timeout_stream`, `git_identity_name`, `git_identity_email`, `enable_secret_persistence`, `update_a2a`, `force_restart`.
 
 Runtime secret requirements:
 

@@ -3,7 +3,7 @@
 # No system users, no workspace scaffolding, no permission management.
 #
 # Usage:
-#   A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh start workdir=/abs/path [instance=dev] [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [codex_cli_bin=codex] [codex_model=<id>] [codex_model_id=<id>] [codex_model_reasoning_effort=<low|medium|high|xhigh>] [codex_provider_id=<id>] [codex_timeout=120] [codex_timeout_stream=300]
+#   A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh start workdir=/abs/path [instance=dev] [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_stream_heartbeat_seconds=<seconds>] [a2a_log_payloads=false] [a2a_log_body_limit=0] [codex_cli_bin=codex] [codex_model=<id>] [codex_model_id=<id>] [codex_model_reasoning_effort=<low|medium|high|xhigh>] [codex_provider_id=<id>] [codex_timeout=120] [codex_timeout_stream=300]
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,6 +21,7 @@ A2A_PORT="8000"
 A2A_PUBLIC_URL=""
 A2A_LOG_LEVEL="INFO"
 A2A_STREAMING="true"
+A2A_STREAM_HEARTBEAT_SECONDS="${A2A_STREAM_HEARTBEAT_SECONDS:-}"
 A2A_LOG_PAYLOADS="false"
 A2A_LOG_BODY_LIMIT="0"
 CODEX_CLI_BIN="${CODEX_CLI_BIN:-codex}"
@@ -40,7 +41,7 @@ SERVICE_DEFAULT_CODEX_MODEL="gpt-5.1-codex"
 usage() {
   cat <<'USAGE'
 Usage:
-  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh start workdir=/abs/path [instance=dev] [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [codex_cli_bin=codex] [codex_model=<id>] [codex_model_id=<id>] [codex_model_reasoning_effort=<low|medium|high|xhigh>] [codex_provider_id=<id>] [codex_timeout=120] [codex_timeout_stream=300]
+  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh start workdir=/abs/path [instance=dev] [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_stream_heartbeat_seconds=<seconds>] [a2a_log_payloads=false] [a2a_log_body_limit=0] [codex_cli_bin=codex] [codex_model=<id>] [codex_model_id=<id>] [codex_model_reasoning_effort=<low|medium|high|xhigh>] [codex_provider_id=<id>] [codex_timeout=120] [codex_timeout_stream=300]
 
 Notes:
   - deploy_light.sh is a foreground launcher.
@@ -79,6 +80,9 @@ for arg in "$@"; do
       ;;
     a2a_streaming)
       A2A_STREAMING="$value"
+      ;;
+    a2a_stream_heartbeat_seconds)
+      A2A_STREAM_HEARTBEAT_SECONDS="$value"
       ;;
     a2a_log_payloads)
       A2A_LOG_PAYLOADS="$value"
@@ -264,6 +268,7 @@ start_instance() {
   export A2A_PUBLIC_URL
   export A2A_LOG_LEVEL
   export A2A_STREAMING
+  export A2A_STREAM_HEARTBEAT_SECONDS
   export A2A_LOG_PAYLOADS
   export A2A_LOG_BODY_LIMIT
   export A2A_BEARER_TOKEN
