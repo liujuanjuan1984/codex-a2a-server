@@ -2,12 +2,9 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+_FALLBACK_VERSION = "0.1.0"
 
-def get_package_version() -> str:
-    try:
-        return version("codex-a2a-server")
-    except PackageNotFoundError:
-        return "0.1.0"
-
-
-__version__ = get_package_version()
+try:
+    __version__ = version("codex-a2a-server")
+except PackageNotFoundError:
+    __version__ = _FALLBACK_VERSION

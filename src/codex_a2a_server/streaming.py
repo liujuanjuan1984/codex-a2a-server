@@ -160,9 +160,6 @@ class StreamOutputState:
     emitted_stream_chunk: bool = False
     sequence: int = 0
 
-    def matches_expected_message(self, message_id: str | None) -> bool:
-        return True
-
     def should_drop_initial_user_echo(
         self,
         text: str,
@@ -281,8 +278,6 @@ async def consume_codex_stream(
     max_backoff = 5.0
 
     async def emit_chunk_now(chunk: NormalizedStreamChunk) -> None:
-        if not stream_state.matches_expected_message(chunk.message_id):
-            return
         resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
         if isinstance(chunk.part, TextPart) and stream_state.should_drop_initial_user_echo(
             chunk.part.text,
@@ -857,31 +852,41 @@ def extract_first_nonempty_string(
     return None
 
 
+def _extract_first_nonempty_string_from_sources(
+    *sources: tuple[Mapping[str, Any] | None, tuple[str, ...]],
+) -> str | None:
+    for source, keys in sources:
+        candidate = extract_first_nonempty_string(source, keys)
+        if candidate:
+            return candidate
+    return None
+
+
+def _extract_mapping(source: Mapping[str, Any] | None, key: str) -> Mapping[str, Any] | None:
+    if not isinstance(source, Mapping):
+        return None
+    value = source.get(key)
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
 def extract_stream_session_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = extract_first_nonempty_string(part, ("sessionID",))
-    if candidate:
-        return candidate
-    return extract_first_nonempty_string(props, ("sessionID",))
+    return _extract_first_nonempty_string_from_sources(
+        (part, ("sessionID",)),
+        (props, ("sessionID",)),
+    )
 
 
 def extract_event_session_id(event: Mapping[str, Any]) -> str | None:
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return None
-    direct = extract_first_nonempty_string(props, ("sessionID",))
-    if direct:
-        return direct
-    info = props.get("info")
-    if isinstance(info, Mapping):
-        info_session_id = extract_first_nonempty_string(info, ("sessionID",))
-        if info_session_id:
-            return info_session_id
-    part = props.get("part")
-    if isinstance(part, Mapping):
-        part_session_id = extract_first_nonempty_string(part, ("sessionID",))
-        if part_session_id:
-            return part_session_id
-    return None
+    return _extract_first_nonempty_string_from_sources(
+        (props, ("sessionID",)),
+        (_extract_mapping(props, "info"), ("sessionID",)),
+        (_extract_mapping(props, "part"), ("sessionID",)),
+    )
 
 
 def extract_string_list(value: Any) -> list[str]:
@@ -897,14 +902,6 @@ def extract_string_list(value: Any) -> list[str]:
     return result
 
 
-def extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
-    return extract_first_nonempty_string(props, ("id",))
-
-
-def extract_interrupt_resolved_request_id(props: Mapping[str, Any]) -> str | None:
-    return extract_first_nonempty_string(props, ("requestID", "id"))
-
-
 def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
     event_type = event.get("type")
     if event_type not in _INTERRUPT_ASKED_EVENT_TYPES:
@@ -912,7 +909,7 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return None
-    request_id = extract_interrupt_asked_request_id(props)
+    request_id = extract_first_nonempty_string(props, ("id",))
     if not request_id:
         return None
     if event_type == "permission.asked":
@@ -954,7 +951,7 @@ def extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str]
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return None
-    request_id = extract_interrupt_resolved_request_id(props)
+    request_id = extract_first_nonempty_string(props, ("requestID", "id"))
     if not request_id:
         return None
     if event_type == "permission.replied":
@@ -980,17 +977,17 @@ def extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str]
 
 
 def extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = extract_first_nonempty_string(part, ("messageID",))
-    if candidate:
-        return candidate
-    return extract_first_nonempty_string(props, ("messageID",))
+    return _extract_first_nonempty_string_from_sources(
+        (part, ("messageID",)),
+        (props, ("messageID",)),
+    )
 
 
 def extract_stream_part_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    candidate = extract_first_nonempty_string(part, ("id",))
-    if candidate:
-        return candidate
-    return extract_first_nonempty_string(props, ("partID",))
+    return _extract_first_nonempty_string_from_sources(
+        (part, ("id",)),
+        (props, ("partID",)),
+    )
 
 
 def extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:

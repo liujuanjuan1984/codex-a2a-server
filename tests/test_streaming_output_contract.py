@@ -5,7 +5,13 @@ from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 from codex_a2a_server.agent import CodexAgentExecutor
 from codex_a2a_server.codex_client import CodexMessage
-from codex_a2a_server.streaming import extract_interrupt_resolved_event
+from codex_a2a_server.streaming import (
+    extract_event_session_id,
+    extract_interrupt_resolved_event,
+    extract_stream_message_id,
+    extract_stream_part_id,
+    extract_stream_session_id,
+)
 from tests.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -686,6 +692,33 @@ def test_extract_interrupt_resolved_event_accepts_request_id_aliases() -> None:
         "interrupt_type": "permission",
         "resolution": "replied",
     }
+
+
+def test_extract_event_session_id_checks_direct_and_nested_properties() -> None:
+    assert extract_event_session_id({"properties": {"sessionID": "ses-direct"}}) == "ses-direct"
+    assert (
+        extract_event_session_id({"properties": {"info": {"sessionID": "ses-info"}}}) == "ses-info"
+    )
+    assert (
+        extract_event_session_id({"properties": {"part": {"sessionID": "ses-part"}}}) == "ses-part"
+    )
+
+
+def test_extract_stream_identifiers_prefer_part_values_and_fallback_to_properties() -> None:
+    part = {
+        "sessionID": "ses-part",
+        "messageID": "msg-part",
+        "id": "part-direct",
+    }
+    props = {
+        "sessionID": "ses-props",
+        "messageID": "msg-props",
+        "partID": "part-props",
+    }
+    assert extract_stream_session_id(part, props) == "ses-part"
+    assert extract_stream_message_id(part, props) == "msg-part"
+    assert extract_stream_part_id(part, props) == "part-direct"
+    assert extract_stream_part_id({}, props) == "part-props"
 
 
 @pytest.mark.asyncio

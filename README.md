@@ -37,7 +37,7 @@ infrastructure rather than local-only tools:
 - session continuation and session query extensions
 - interrupt lifecycle mapping and callback validation
 - bearer-token auth, payload logging controls, and secret-handling guardrails
-- systemd multi-instance deployment and lightweight local deployment
+- systemd multi-instance deployment and released-CLI startup paths
 
 ## Logical Components
 
@@ -70,8 +70,8 @@ deployments:
 - streaming contracts are normalized around shared metadata
 - interrupt ask/resolve lifecycle is surfaced explicitly
 - session continuity is available through shared metadata and JSON-RPC queries
-- deployment scripts cover both long-running systemd instances and lightweight
-  current-user startup
+- deployment guidance now separates source development, released-CLI self-start,
+  and long-running systemd instances
 - security baseline now includes `SECURITY.md`, secret scanning, and safer
   deployment defaults
 
@@ -130,14 +130,25 @@ Install an exact release:
 uv tool install "codex-a2a-server==<version>"
 ```
 
-Start the released CLI:
+Self-start the released CLI against an existing project:
 
 ```bash
 export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+CODEX_DIRECTORY=/abs/path/to/project \
 codex-a2a-server
 ```
 
 Default address: `http://127.0.0.1:8000`
+
+For a longer self-start example with model and timeout overrides, use the
+[Usage Guide](docs/guide.md).
+
+For a managed long-running deployment, use the published-package systemd flow
+in the [Deployment Guide](docs/deployment.md). That path no longer relies on a
+source checkout or a repository-local virtualenv.
 
 ## Development From Source
 
@@ -177,10 +188,11 @@ docs instead of the root README.
   Configuration, API contracts, client examples, streaming/session/interrupt
   details.
 - [Deployment Guide](docs/deployment.md)
-  systemd deployment, lightweight deployment, runtime secret strategy, and
+  systemd deployment from the published package, runtime secret strategy, and
   operations guidance.
 - [Script Guide](scripts/README.md)
-  Entry points for init, deploy, local start, and uninstall scripts.
+  Entry points for bootstrap, managed deploy, uninstall, and release smoke
+  test scripts.
 - [Security Policy](SECURITY.md)
   Threat model, deployment caveats, and vulnerability disclosure guidance.
 

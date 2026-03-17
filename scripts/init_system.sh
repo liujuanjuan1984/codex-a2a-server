@@ -6,16 +6,16 @@
 set -euo pipefail
 
 CODEX_CORE_DIR="/opt/.codex"
-SHARED_WRAPPER_DIR="/opt/codex-a2a"
-CODEX_A2A_DIR="${SHARED_WRAPPER_DIR}/codex-a2a-server"
+CODEX_A2A_ROOT="/opt/codex-a2a"
+CODEX_A2A_RUNTIME_DIR="${CODEX_A2A_ROOT}/runtime"
 UV_PYTHON_DIR="/opt/uv-python"
 UV_PYTHON_DIR_MODE="777"
 UV_PYTHON_DIR_FINAL_MODE="755"
 UV_PYTHON_DIR_GROUP=""
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/codex-a2a"
-CODEX_A2A_REPO="https://github.com/liujuanjuan1984/codex-a2a-server.git"
-CODEX_A2A_BRANCH="main"
+CODEX_A2A_PACKAGE_SPEC="codex-a2a-server"
+CODEX_A2A_PYTHON_VERSION="3.13"
 CODEX_INSTALL_CMD="curl -fsSL https://codex.ai/install | bash"
 
 # Feature toggles (edit here to enable/disable).
@@ -401,7 +401,7 @@ log_done "Systemd check completed."
 
 log_start "Ensuring shared directories exist..."
 ensure_dir "$CODEX_CORE_DIR" "755"
-ensure_dir "$SHARED_WRAPPER_DIR" "755"
+ensure_dir "$CODEX_A2A_ROOT" "755"
 ensure_dir "$UV_PYTHON_DIR" "$UV_PYTHON_DIR_MODE"
 if [[ -n "$UV_PYTHON_DIR_GROUP" ]]; then
   $SUDO chgrp "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
@@ -509,55 +509,34 @@ else
 fi
 log_done "uv Python version check completed."
 
-log_start "Checking repository state..."
-if [[ -d "$CODEX_A2A_DIR/.git" ]]; then
-  log_done "Repo exists; skip clone: $CODEX_A2A_DIR"
+log_start "Checking codex-a2a runtime environment..."
+if ! command -v uv >/dev/null 2>&1; then
+  warn "uv not available; cannot create the codex-a2a runtime."
+  INCOMPLETE=1
 else
-  if [[ -d "$CODEX_A2A_DIR" && -n "$(ls -A "$CODEX_A2A_DIR" 2>/dev/null)" ]]; then
-    warn "Directory not empty and not a git repo; skip clone: $CODEX_A2A_DIR"
-    INCOMPLETE=1
+  if [[ ! -x "${CODEX_A2A_RUNTIME_DIR}/bin/python" ]]; then
+    log_start "Creating codex-a2a runtime virtualenv..."
+    UV_PYTHON_DIR="$UV_PYTHON_DIR" \
+      UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR" \
+      uv venv "$CODEX_A2A_RUNTIME_DIR" --python "$CODEX_A2A_PYTHON_VERSION"
+    log_done "codex-a2a runtime virtualenv created."
   else
-    if ! command -v git >/dev/null 2>&1; then
-      warn "git not available; cannot clone repo."
+    log_done "codex-a2a runtime virtualenv already exists; skip."
+  fi
+
+  if [[ -x "${CODEX_A2A_RUNTIME_DIR}/bin/python" ]]; then
+    log_start "Installing ${CODEX_A2A_PACKAGE_SPEC} into shared runtime..."
+    if ! UV_PYTHON_DIR="$UV_PYTHON_DIR" \
+      UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR" \
+      uv pip install --python "${CODEX_A2A_RUNTIME_DIR}/bin/python" "${CODEX_A2A_PACKAGE_SPEC}"; then
+      warn "codex-a2a package installation failed."
       INCOMPLETE=1
     else
-      log_start "Cloning repo to $CODEX_A2A_DIR"
-      if ! $SUDO git clone "$CODEX_A2A_REPO" "$CODEX_A2A_DIR"; then
-        warn "git clone failed. Ensure SSH key is configured or manually clone into $CODEX_A2A_DIR."
-        INCOMPLETE=1
-      else
-        if [[ -n "$CODEX_A2A_BRANCH" ]]; then
-          $SUDO git -C "$CODEX_A2A_DIR" checkout "$CODEX_A2A_BRANCH"
-        fi
-        log_done "Repo cloned to $CODEX_A2A_DIR"
-      fi
+      log_done "codex-a2a package installed."
     fi
   fi
 fi
-log_done "Repository check completed."
-
-log_start "Checking A2A virtual environment..."
-if [[ -x "${CODEX_A2A_DIR}/.venv/bin/codex-a2a-server" ]]; then
-  log_done "A2A venv already initialized; skip."
-else
-  if ! command -v uv >/dev/null 2>&1; then
-    warn "uv not available; cannot create A2A venv."
-    INCOMPLETE=1
-  elif [[ ! -f "${CODEX_A2A_DIR}/pyproject.toml" ]]; then
-    warn "pyproject.toml not found in ${CODEX_A2A_DIR}; cannot create venv."
-    INCOMPLETE=1
-  else
-    log_start "Creating A2A venv with uv sync..."
-    (
-      cd "$CODEX_A2A_DIR"
-      UV_PYTHON_DIR="$UV_PYTHON_DIR" \
-        UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR" \
-        uv sync --all-extras
-    )
-    log_done "A2A venv created."
-  fi
-fi
-log_done "A2A virtual environment check completed."
+log_done "codex-a2a runtime check completed."
 
 log_start "Checking Codex installation..."
 CODEX_BIN="${CODEX_CORE_DIR}/bin/codex"

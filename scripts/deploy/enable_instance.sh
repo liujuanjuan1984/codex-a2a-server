@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enable and start systemd services for a project.
+# Enable and start the codex-a2a systemd service for a project.
 # Usage: ./enable_instance.sh <project_name>
 # Requires sudo to manage systemd services.
 set -euo pipefail
@@ -28,7 +28,6 @@ start_or_restart() {
   fi
 }
 
-start_or_restart "codex@${PROJECT_NAME}.service"
 start_or_restart "codex-a2a@${PROJECT_NAME}.service"
 
 sudo systemctl status "codex-a2a@${PROJECT_NAME}.service" --no-pager

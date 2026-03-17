@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Create project user, directories, and env files for systemd services.
+# Create project user, directories, and env files for the codex-a2a systemd service.
 # Usage: [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [ENABLE_SECRET_PERSISTENCE=true] ./setup_instance.sh <project_name>
-# Requires env: DATA_ROOT, CODEX_BIND_HOST, CODEX_BIND_PORT, CODEX_LOG_LEVEL,
-#               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
+# Requires env: DATA_ROOT, A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Secret persistence is opt-in via ENABLE_SECRET_PERSISTENCE=true.
 set -euo pipefail
@@ -19,9 +18,6 @@ if [[ "$#" -ne 1 || -z "$PROJECT_NAME" ]]; then
 fi
 
 : "${DATA_ROOT:?}"
-: "${CODEX_BIND_HOST:?}"
-: "${CODEX_BIND_PORT:?}"
-: "${CODEX_LOG_LEVEL:?}"
 : "${A2A_HOST:?}"
 : "${A2A_PORT:?}"
 : "${A2A_PUBLIC_URL:?}"
@@ -134,7 +130,7 @@ sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$CACHE_DIR" "$STATE_DIR" "$CODEX_LO
 
 codex_auth_example_tmp="$(mktemp)"
 cat <<'EOF' >"$codex_auth_example_tmp"
-# Root-only runtime secret file for codex@.service.
+# Root-only runtime secret file for codex-a2a@.service.
 # Populate GH_TOKEN here if ENABLE_SECRET_PERSISTENCE is not enabled during deploy.
 GH_TOKEN=<github-token>
 EOF
@@ -152,7 +148,7 @@ rm -f "$a2a_secret_example_tmp"
 
 codex_secret_example_tmp="$(mktemp)"
 {
-  echo "# Optional root-only provider secret file for codex@.service."
+  echo "# Optional root-only provider secret file for codex-a2a@.service."
   echo "# Populate only the provider keys your deployment actually uses."
   for key in "${SECRET_ENV_KEYS[@]}"; do
     echo "${key}=<optional>"
@@ -184,10 +180,7 @@ fi
 
 codex_env_tmp="$(mktemp)"
 {
-  echo "CODEX_LOG_LEVEL=${CODEX_LOG_LEVEL}"
-  echo "CODEX_BIND_HOST=${CODEX_BIND_HOST}"
-  echo "CODEX_BIND_PORT=${CODEX_BIND_PORT}"
-  echo "CODEX_EXTRA_ARGS=${CODEX_EXTRA_ARGS:-}"
+  echo "CODEX_APP_SERVER_LISTEN=${CODEX_APP_SERVER_LISTEN:-stdio://}"
   echo "GIT_ASKPASS=${ASKPASS_SCRIPT}"
   echo "GIT_ASKPASS_REQUIRE=force"
   echo "GIT_TERMINAL_PROMPT=0"
@@ -200,6 +193,11 @@ codex_env_tmp="$(mktemp)"
   fi
   if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
     echo "CODEX_MODEL_ID=${CODEX_MODEL_ID}"
+  fi
+  echo "CODEX_DIRECTORY=${WORKSPACE_DIR}"
+  echo "CODEX_TIMEOUT=${CODEX_TIMEOUT:-300}"
+  if [[ -n "${CODEX_TIMEOUT_STREAM:-}" ]]; then
+    echo "CODEX_TIMEOUT_STREAM=${CODEX_TIMEOUT_STREAM}"
   fi
 } >"$codex_env_tmp"
 sudo install -m 600 -o root -g root "$codex_env_tmp" "$CONFIG_DIR/codex.env"
@@ -251,18 +249,6 @@ a2a_env_tmp="$(mktemp)"
   echo "A2A_LOG_LEVEL=${A2A_LOG_LEVEL:-INFO}"
   echo "A2A_LOG_PAYLOADS=${A2A_LOG_PAYLOADS:-false}"
   echo "A2A_LOG_BODY_LIMIT=${A2A_LOG_BODY_LIMIT:-0}"
-  echo "CODEX_BASE_URL=http://${CODEX_BIND_HOST}:${CODEX_BIND_PORT}"
-  echo "CODEX_DIRECTORY=${WORKSPACE_DIR}"
-  echo "CODEX_TIMEOUT=${CODEX_TIMEOUT:-300}"
-  if [[ -n "${CODEX_TIMEOUT_STREAM:-}" ]]; then
-    echo "CODEX_TIMEOUT_STREAM=${CODEX_TIMEOUT_STREAM}"
-  fi
-  if [[ -n "${CODEX_PROVIDER_ID:-}" ]]; then
-    echo "CODEX_PROVIDER_ID=${CODEX_PROVIDER_ID}"
-  fi
-  if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
-    echo "CODEX_MODEL_ID=${CODEX_MODEL_ID}"
-  fi
 } >"$a2a_env_tmp"
 sudo install -m 600 -o root -g root "$a2a_env_tmp" "$CONFIG_DIR/a2a.env"
 rm -f "$a2a_env_tmp"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy an isolated Codex + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
+# Deploy an isolated Codex + A2A instance (single systemd service per project).
+# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [package_spec=<spec>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
 # Secret env vars are only required when persisting them during deploy or when setup actions need them.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
@@ -29,6 +29,7 @@ CODEX_PROVIDER_ID_INPUT=""
 CODEX_MODEL_ID_INPUT=""
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
+PACKAGE_SPEC_INPUT=""
 CODEX_TIMEOUT_INPUT=""
 CODEX_TIMEOUT_STREAM_INPUT=""
 GIT_IDENTITY_NAME_INPUT=""
@@ -94,6 +95,9 @@ for arg in "$@"; do
     repo_branch)
       REPO_BRANCH_INPUT="$value"
       ;;
+    package_spec)
+      PACKAGE_SPEC_INPUT="$value"
+      ;;
     codex_timeout)
       CODEX_TIMEOUT_INPUT="$value"
       ;;
@@ -132,7 +136,7 @@ Usage:
   [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
-  [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
+  [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [package_spec=<spec>] \
   [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -142,7 +146,10 @@ USAGE
   exit 1
 fi
 
-export CODEX_A2A_DIR="${CODEX_A2A_DIR:-/opt/codex-a2a/codex-a2a-server}"
+export CODEX_A2A_ROOT="${CODEX_A2A_ROOT:-/opt/codex-a2a}"
+export CODEX_A2A_RUNTIME_DIR="${CODEX_A2A_RUNTIME_DIR:-${CODEX_A2A_ROOT}/runtime}"
+export CODEX_A2A_PACKAGE_SPEC="${CODEX_A2A_PACKAGE_SPEC:-codex-a2a-server}"
+export CODEX_A2A_PYTHON_VERSION="${CODEX_A2A_PYTHON_VERSION:-3.13}"
 export CODEX_CORE_DIR="${CODEX_CORE_DIR:-/opt/.codex}"
 export UV_PYTHON_DIR="${UV_PYTHON_DIR:-/opt/uv-python}"
 export DATA_ROOT="${DATA_ROOT:-/data/codex-a2a}"
@@ -159,15 +166,13 @@ export_if_present "CODEX_PROVIDER_ID" "$CODEX_PROVIDER_ID_INPUT"
 export_if_present "CODEX_MODEL_ID" "$CODEX_MODEL_ID_INPUT"
 export_if_present "REPO_URL" "$REPO_URL_INPUT"
 export_if_present "REPO_BRANCH" "$REPO_BRANCH_INPUT"
+export_if_present "CODEX_A2A_PACKAGE_SPEC" "$PACKAGE_SPEC_INPUT"
 export_if_present "CODEX_TIMEOUT" "$CODEX_TIMEOUT_INPUT"
 export_if_present "CODEX_TIMEOUT_STREAM" "$CODEX_TIMEOUT_STREAM_INPUT"
 export_if_present "GIT_IDENTITY_NAME" "$GIT_IDENTITY_NAME_INPUT"
 export_if_present "GIT_IDENTITY_EMAIL" "$GIT_IDENTITY_EMAIL_INPUT"
 export_if_present "DATA_ROOT" "$DATA_ROOT_INPUT"
 
-export CODEX_BIND_HOST="${CODEX_BIND_HOST:-127.0.0.1}"
-export CODEX_LOG_LEVEL="${CODEX_LOG_LEVEL:-DEBUG}"
-export CODEX_EXTRA_ARGS="${CODEX_EXTRA_ARGS:-}"
 export ENABLE_SECRET_PERSISTENCE="${ENABLE_SECRET_PERSISTENCE:-false}"
 
 if [[ -n "$A2A_HOST_INPUT" ]]; then
@@ -179,14 +184,6 @@ if [[ -n "$A2A_PORT_INPUT" ]]; then
   export A2A_PORT="$A2A_PORT_INPUT"
 else
   export A2A_PORT="${A2A_PORT:-8000}"
-fi
-
-if [[ -z "${CODEX_BIND_PORT:-}" ]]; then
-  if [[ "$A2A_PORT" =~ ^[0-9]+$ ]]; then
-    export CODEX_BIND_PORT="$((A2A_PORT + 1))"
-  else
-    export CODEX_BIND_PORT="4096"
-  fi
 fi
 if [[ -n "$A2A_PUBLIC_URL_INPUT" ]]; then
   export A2A_PUBLIC_URL="$A2A_PUBLIC_URL_INPUT"

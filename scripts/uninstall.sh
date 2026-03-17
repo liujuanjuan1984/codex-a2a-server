@@ -6,9 +6,9 @@
 # - There is NO dry_run=false option.
 # - To actually apply destructive actions you must pass confirm=UNINSTALL.
 #
-# IMPORTANT: This script never removes systemd template units
-# (/etc/systemd/system/codex@.service, codex-a2a@.service) because they are
-# shared globally across all instances.
+# IMPORTANT: This script never removes the shared systemd template unit
+# (/etc/systemd/system/codex-a2a@.service). Older installations may also still
+# have a legacy codex@.service unit; that shared template is not removed either.
 #
 # Usage:
 #   ./scripts/uninstall.sh project=<name> [data_root=/data/codex-a2a] [confirm=UNINSTALL]
@@ -239,7 +239,7 @@ run_reset_failed() {
 echo "Project: ${PROJECT_NAME}"
 echo "DATA_ROOT: ${DATA_ROOT}"
 echo "Project dir: ${PROJECT_DIR}"
-echo "Note: systemd template units will NOT be removed."
+echo "Note: shared systemd template units will NOT be removed."
 echo "Mode: $([[ "$APPLY" == "true" ]] && echo apply || echo preview)"
 
 # In apply mode, enforce strict project name constraints to match typical Linux

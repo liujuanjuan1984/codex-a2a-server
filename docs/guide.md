@@ -63,80 +63,50 @@ navigation, start from [README.md](../README.md) instead.
 Configuration note:
 - The service configuration layer only accepts `CODEX_*` names for Codex-facing settings.
 
-## Lightweight Deploy Inheritance
+## Released CLI Self-Start
 
-- `scripts/deploy_light.sh` is a lightweight current-user foreground launcher.
-- It preserves already-exported `CODEX_*` shell variables when present.
-- By default it best-effort reads `~/.codex/config.toml` and inherits:
-  - `model`
-  - `model_reasoning_effort`
-- Explicit instance parameters still win over shell / local Codex config:
-  - `codex_model=...`
-  - `codex_model_id=...`
-  - `codex_model_reasoning_effort=...`
-- Before launch, the script prints a Codex config summary so the effective
-  model / reasoning combination is visible.
-- Known high-risk combinations are blocked before startup. Currently this
-  includes `reasoning_effort=xhigh` together with `gpt-5.1-codex*`.
-- `start` runs the service in the foreground and streams logs to stdout/stderr.
-- `deploy_light.sh` no longer manages `stop` / `status` / `restart` or
-  per-instance pid/log files.
-- If you need detached execution, restart policies, or log capture, run
-  `deploy_light.sh start ...` under `nohup`, `pm2`, `systemd`, or another
-  process manager.
-- `deploy_light.sh` is intentionally lighter than `deploy.sh`: it does not add
-  a supervisor, auto-restart policy, isolated Linux user, or permission
-  scaffolding. Use `deploy.sh` when you need a repository-managed service
-  lifecycle.
+For a single user or an existing project checkout, prefer the published CLI
+instead of repository scripts.
 
-Example `nohup` usage:
+Install once:
 
 ```bash
-mkdir -p ./logs/light
-A2A_BEARER_TOKEN="$A2A_BEARER_TOKEN" \
-nohup ./scripts/deploy_light.sh start \
-  workdir=/abs/path/to/workdir \
-  instance=dev \
-  a2a_host=127.0.0.1 \
-  a2a_port=8000 \
-  a2a_public_url=http://127.0.0.1:8000 \
-  > ./logs/light/dev.out.log 2>&1 &
-echo $! > ./run/light/dev.pid
+uv tool install codex-a2a-server
 ```
 
-To stop a `nohup`-managed process, use the PID captured by your shell wrapper:
+Run against an existing project:
 
 ```bash
-kill "$(cat ./run/light/dev.pid)"
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+CODEX_DIRECTORY=/abs/path/to/project \
+CODEX_MODEL_ID=gpt-5.1-codex \
+CODEX_TIMEOUT=300 \
+codex-a2a-server
 ```
 
-Example `pm2` usage:
+Notes:
+
+- `CODEX_DIRECTORY` should point at the project you want Codex to operate in.
+- `codex-a2a-server` launches the Codex app-server subprocess itself; no
+  separate `codex serve` step is required.
+- Upgrade the installed CLI with `uv tool upgrade codex-a2a-server`.
+
+## Source-Based Development Start
+
+Use the source tree directly only for development, debugging, or validation of
+unreleased changes:
 
 ```bash
-mkdir -p ./logs/light
-export A2A_BEARER_TOKEN="$A2A_BEARER_TOKEN"
-pm2 start ./scripts/deploy_light.sh \
-  --name codex-a2a-light-dev \
-  --interpreter bash \
-  --time \
-  --output ./logs/light/dev.out.log \
-  --error ./logs/light/dev.err.log \
-  -- start \
-  workdir=/abs/path/to/workdir \
-  instance=dev \
-  a2a_host=127.0.0.1 \
-  a2a_port=8000 \
-  a2a_public_url=http://127.0.0.1:8000
+uv sync --all-extras
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+CODEX_DIRECTORY=/abs/path/to/project uv run codex-a2a-server
 ```
 
-Useful `pm2` follow-up commands:
-
-```bash
-pm2 status codex-a2a-light-dev
-pm2 restart codex-a2a-light-dev
-pm2 logs codex-a2a-light-dev
-pm2 stop codex-a2a-light-dev
-```
+This path is for contributors. End users should prefer the released CLI or the
+managed systemd deployment flow.
 
 ## Service Behavior
 

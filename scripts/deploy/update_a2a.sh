@@ -1,27 +1,23 @@
 #!/usr/bin/env bash
-# Update the shared codex-a2a-server environment (no git operations).
-# Requires env: CODEX_A2A_DIR.
+# Update the shared codex-a2a-server runtime from a published package.
+# Requires env: CODEX_A2A_RUNTIME_DIR.
 set -euo pipefail
 
-: "${CODEX_A2A_DIR:?}"
+: "${CODEX_A2A_RUNTIME_DIR:?}"
 
-if [[ ! -d "$CODEX_A2A_DIR" ]]; then
-  echo "CODEX_A2A_DIR not found: $CODEX_A2A_DIR" >&2
-  exit 1
-fi
-
-if [[ ! -f "${CODEX_A2A_DIR}/pyproject.toml" ]]; then
-  echo "pyproject.toml not found in ${CODEX_A2A_DIR}" >&2
-  exit 1
-fi
+CODEX_A2A_PACKAGE_SPEC="${CODEX_A2A_PACKAGE_SPEC:-codex-a2a-server}"
+CODEX_A2A_PYTHON_VERSION="${CODEX_A2A_PYTHON_VERSION:-3.13}"
+RUNTIME_PYTHON="${CODEX_A2A_RUNTIME_DIR}/bin/python"
 
 if ! command -v uv >/dev/null 2>&1; then
-  echo "uv not found in PATH; cannot sync venv" >&2
+  echo "uv not found in PATH; cannot update runtime" >&2
   exit 1
 fi
 
-echo "Syncing codex-a2a-server venv in ${CODEX_A2A_DIR}..."
-(
-  cd "$CODEX_A2A_DIR"
-  uv sync --all-extras
-)
+if [[ ! -x "$RUNTIME_PYTHON" ]]; then
+  echo "Creating runtime virtualenv in ${CODEX_A2A_RUNTIME_DIR}..."
+  uv venv "$CODEX_A2A_RUNTIME_DIR" --python "$CODEX_A2A_PYTHON_VERSION"
+fi
+
+echo "Installing ${CODEX_A2A_PACKAGE_SPEC} into ${CODEX_A2A_RUNTIME_DIR}..."
+uv pip install --python "$RUNTIME_PYTHON" --upgrade "$CODEX_A2A_PACKAGE_SPEC"
