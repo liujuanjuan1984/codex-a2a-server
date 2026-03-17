@@ -11,6 +11,24 @@ STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS = 15.0
 STREAM_HEARTBEAT_MAX_SECONDS = 60.0
 
 
+def stream_heartbeat_warning_message(heartbeat_seconds: float | None) -> str | None:
+    if heartbeat_seconds is None:
+        return None
+    if (
+        STREAM_HEARTBEAT_RECOMMENDED_MIN_SECONDS
+        <= heartbeat_seconds
+        <= STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS
+    ):
+        return None
+    return (
+        "A2A_STREAM_HEARTBEAT_SECONDS="
+        f"{heartbeat_seconds} is outside the recommended range "
+        f"{STREAM_HEARTBEAT_RECOMMENDED_MIN_SECONDS:.0f}-"
+        f"{STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS:.0f} seconds; "
+        "the service will keep the configured value"
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="",

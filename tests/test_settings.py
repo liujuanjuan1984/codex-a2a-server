@@ -4,8 +4,7 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
-from codex_a2a_server.app import _warn_on_non_recommended_stream_heartbeat
-from codex_a2a_server.config import Settings
+from codex_a2a_server.config import Settings, stream_heartbeat_warning_message
 
 
 def test_settings_missing_required():
@@ -63,27 +62,23 @@ def test_stream_heartbeat_rejects_values_above_maximum():
     assert "at most 60 seconds" in str(excinfo.value)
 
 
-def test_stream_heartbeat_accepts_recommended_value_without_warning(caplog):
+def test_stream_heartbeat_accepts_recommended_value_without_warning():
     settings = Settings(
         a2a_bearer_token="test-token",
         a2a_stream_heartbeat_seconds=12,
     )
 
-    with caplog.at_level("WARNING", logger="codex_a2a_server.app"):
-        _warn_on_non_recommended_stream_heartbeat(settings)
-
-    assert caplog.records == []
+    assert stream_heartbeat_warning_message(settings.a2a_stream_heartbeat_seconds) is None
 
 
-def test_stream_heartbeat_warns_when_value_is_outside_recommended_range(caplog):
+def test_stream_heartbeat_warns_when_value_is_outside_recommended_range():
     settings = Settings(
         a2a_bearer_token="test-token",
         a2a_stream_heartbeat_seconds=20,
     )
 
-    with caplog.at_level("WARNING", logger="codex_a2a_server.app"):
-        _warn_on_non_recommended_stream_heartbeat(settings)
-
-    assert any(
-        "outside the recommended range 10-15 seconds" in record.message for record in caplog.records
+    assert (
+        stream_heartbeat_warning_message(settings.a2a_stream_heartbeat_seconds)
+        == "A2A_STREAM_HEARTBEAT_SECONDS=20.0 is outside the recommended range 10-15 "
+        "seconds; the service will keep the configured value"
     )

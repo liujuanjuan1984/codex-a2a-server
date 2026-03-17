@@ -279,7 +279,7 @@ Naming rule in the tables below:
 | `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
 | `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public Agent Card URL. |
 | `A2A_STREAMING` | `a2a_streaming` | Optional | `true` | SSE streaming switch. |
-| `A2A_STREAM_HEARTBEAT_SECONDS` | `a2a_stream_heartbeat_seconds` | Optional | empty | 客户端可见 idle 心跳阈值（秒）；推荐 `10-15`，小于 `5` 或大于 `60` 会被拒绝，超出推荐区间会在启动时告警。 |
+| `A2A_STREAM_HEARTBEAT_SECONDS` | `a2a_stream_heartbeat_seconds` | Optional | empty | Client-visible idle heartbeat threshold in seconds; recommended `10-15`; values below `5` or above `60` are rejected; values outside the recommended range trigger a startup warning. |
 | `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `DEBUG` | A2A log level. |
 | `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging switch. |
 | `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |

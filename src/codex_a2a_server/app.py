@@ -31,9 +31,8 @@ from starlette.responses import StreamingResponse
 from .agent import CodexAgentExecutor
 from .codex_client import CodexClient
 from .config import (
-    STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS,
-    STREAM_HEARTBEAT_RECOMMENDED_MIN_SECONDS,
     Settings,
+    stream_heartbeat_warning_message,
 )
 from .extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
@@ -578,30 +577,13 @@ def _configure_logging(level: str) -> None:
     logging.getLogger("uvicorn.access").setLevel(level)
 
 
-def _warn_on_non_recommended_stream_heartbeat(settings: Settings) -> None:
-    heartbeat = settings.a2a_stream_heartbeat_seconds
-    if heartbeat is None:
-        return
-    if (
-        STREAM_HEARTBEAT_RECOMMENDED_MIN_SECONDS
-        <= heartbeat
-        <= STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS
-    ):
-        return
-    logger.warning(
-        "A2A_STREAM_HEARTBEAT_SECONDS=%s is outside the recommended range %.0f-%.0f seconds; "
-        "the service will keep the configured value",
-        heartbeat,
-        STREAM_HEARTBEAT_RECOMMENDED_MIN_SECONDS,
-        STREAM_HEARTBEAT_RECOMMENDED_MAX_SECONDS,
-    )
-
-
 def main() -> None:
     settings = Settings.from_env()
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)
-    _warn_on_non_recommended_stream_heartbeat(settings)
+    warning_message = stream_heartbeat_warning_message(settings.a2a_stream_heartbeat_seconds)
+    if warning_message is not None:
+        logger.warning(warning_message)
     app = create_app(settings)
     uvicorn.run(app, host=settings.a2a_host, port=settings.a2a_port, log_level=log_level.lower())
 
