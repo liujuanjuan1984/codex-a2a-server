@@ -40,8 +40,11 @@ overview, runtime contracts, or deployment rationale in detail.
 - [`scripts/deploy_light.sh`](./deploy_light.sh)
 - [`scripts/start_services.sh`](./start_services.sh)
 - [`scripts/uninstall.sh`](./uninstall.sh)
+- [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh)
 
 ## Notes
 
 - `scripts/deploy/` contains helper scripts orchestrated by `scripts/deploy.sh`.
+- `scripts/smoke_test_built_cli.sh` validates that the built wheel can be installed by
+  `uv tool` and that the released CLI becomes healthy.
 - Keep long-form documentation changes in `docs/` to avoid divergence.

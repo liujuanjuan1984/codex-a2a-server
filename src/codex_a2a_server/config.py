@@ -5,6 +5,8 @@ from typing import Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from codex_a2a_server import __version__
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -74,7 +76,7 @@ class Settings(BaseSettings):
     a2a_project: str | None = Field(default=None, alias="A2A_PROJECT")
     a2a_title: str = Field(default="Codex A2A", alias="A2A_TITLE")
     a2a_description: str = Field(default="A2A wrapper service for Codex", alias="A2A_DESCRIPTION")
-    a2a_version: str = Field(default="0.1.0", alias="A2A_VERSION")
+    a2a_version: str = Field(default=__version__, alias="A2A_VERSION")
     a2a_protocol_version: str = Field(default="0.3.0", alias="A2A_PROTOCOL_VERSION")
     a2a_streaming: bool = Field(default=True, alias="A2A_STREAMING")
     a2a_log_level: str = Field(default="INFO", alias="A2A_LOG_LEVEL")

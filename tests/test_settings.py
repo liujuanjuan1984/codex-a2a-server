@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
+from codex_a2a_server import __version__
 from codex_a2a_server.config import Settings
 
 
@@ -28,6 +29,7 @@ def test_settings_valid():
         assert settings.a2a_bearer_token == "test-token"
         assert settings.codex_timeout == 300.0
         assert settings.codex_model_reasoning_effort == "high"
+        assert settings.a2a_version == __version__
 
 
 def test_parse_oauth_scopes():

@@ -1,9 +1,28 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "codex-a2a-server"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A2A wrapper service for codex"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "liujuanjuan1984@Intelligent-Internet" },
+]
+keywords = ["a2a", "codex", "fastapi", "json-rpc", "sse"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
+    "Topic :: Internet :: WWW/HTTP",
+]
 dependencies = [
     "a2a-sdk==0.3.22",
     "fastapi>=0.110",
@@ -25,6 +44,11 @@ dev = [
 [project.scripts]
 codex-a2a-server = "codex_a2a_server.app:main"
 
+[project.urls]
+Homepage = "https://github.com/liujuanjuan1984/codex-a2a-server"
+Repository = "https://github.com/liujuanjuan1984/codex-a2a-server"
+Issues = "https://github.com/liujuanjuan1984/codex-a2a-server/issues"
+
 [tool.ruff]
 line-length = 100
 src = ["src"]
@@ -37,6 +61,10 @@ quote-style = "double"
 
 [tool.uv]
 package = true
+
+[tool.setuptools_scm]
+fallback_version = "0.1.0"
+tag_regex = "^v?(?P<version>.+)$"
 
 [tool.pytest.ini_options]
 filterwarnings = [

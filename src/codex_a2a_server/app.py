@@ -359,6 +359,10 @@ def create_app(settings: Settings) -> FastAPI:
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
 
+    @app.get("/health")
+    async def health_check():
+        return {"status": "ok"}
+
     def _parse_json_body(body_bytes: bytes) -> dict | None:
         try:
             payload = json.loads(body_bytes.decode("utf-8", errors="replace"))

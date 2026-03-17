@@ -98,7 +98,51 @@ It is a better place for client concerns such as A2A consumption, upstream
 adapter normalization, and application-facing integration, while
 `codex-a2a-server` stays focused on the server/runtime boundary around Codex.
 
-## Quick Start
+## Install Released CLI
+
+Released versions are published to PyPI and mapped to Git tags / GitHub
+Releases. This is the recommended entry point for users.
+
+Release gate:
+
+- create a PR from the working branch
+- merge into `main` after human review
+- create a `v*` tag only from a commit already contained in `main`
+- let the tag trigger PyPI and GitHub Release publication
+
+This repository does not publish directly from an unmerged feature branch.
+
+Install the latest release:
+
+```bash
+uv tool install codex-a2a-server
+```
+
+Upgrade an existing installation:
+
+```bash
+uv tool upgrade codex-a2a-server
+```
+
+Install an exact release:
+
+```bash
+uv tool install "codex-a2a-server==<version>"
+```
+
+Start the released CLI:
+
+```bash
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+codex-a2a-server
+```
+
+Default address: `http://127.0.0.1:8000`
+
+## Development From Source
+
+Use the repository checkout directly only for development, local debugging, or
+validation against unreleased changes on `main`.
 
 1. Install dependencies:
 
@@ -106,13 +150,13 @@ adapter normalization, and application-facing integration, while
 uv sync --all-extras
 ```
 
-2. Generate a temporary local bearer token:
+2. Generate a local bearer token:
 
 ```bash
 export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
 ```
 
-3. Start the service:
+3. Start this service from the source tree:
 
 ```bash
 uv run codex-a2a-server

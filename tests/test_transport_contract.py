@@ -21,6 +21,7 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
     app = create_app(make_settings(a2a_bearer_token="test-token"))
     route_paths = {route.path for route in app.router.routes if hasattr(route, "path")}
 
+    assert "/health" in route_paths
     assert "/v1/tasks/{id}:subscribe" in route_paths
     assert "/v1/tasks/{id}:resubscribe" not in route_paths
 
