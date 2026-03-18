@@ -12,6 +12,13 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
 
 from .codex_client import CodexClient
+from .metrics import (
+    CODEX_STREAM_RETRIES_TOTAL,
+    INTERRUPT_REQUESTS_TOTAL,
+    INTERRUPT_RESOLVED_TOTAL,
+    TOOL_CALL_CHUNKS_EMITTED_TOTAL,
+    get_metrics_registry,
+)
 from .output_mapping import (
     build_output_metadata,
     enqueue_artifact_update,
@@ -45,6 +52,7 @@ from .stream_state import (
 )
 
 logger = logging.getLogger(__name__)
+metrics = get_metrics_registry()
 
 _STREAM_COMPLETION_DRAIN_SECONDS = 0.05
 __all__ = [
@@ -113,6 +121,8 @@ async def consume_codex_stream(
                 event_id=stream_state.build_event_id(sequence),
             ),
         )
+        if chunk.block_type == BlockType.TOOL_CALL:
+            metrics.inc_counter(TOOL_CALL_CHUNKS_EMITTED_TOTAL)
         logger.debug(
             "Stream chunk task_id=%s session_id=%s block_type=%s append=%s text=%s",
             task_id,
@@ -200,6 +210,10 @@ async def consume_codex_stream(
                 ),
             )
         )
+        if phase == "asked":
+            metrics.inc_counter(INTERRUPT_REQUESTS_TOTAL)
+        elif phase == "resolved":
+            metrics.inc_counter(INTERRUPT_RESOLVED_TOTAL)
 
     try:
         while not stop_event.is_set():
@@ -414,6 +428,7 @@ async def consume_codex_stream(
             except Exception:
                 if stop_event.is_set():
                     break
+                metrics.inc_counter(CODEX_STREAM_RETRIES_TOTAL)
                 logger.exception(
                     "Codex event stream failed; retrying "
                     "task_id=%s session_id=%s backoff_seconds=%.1f",

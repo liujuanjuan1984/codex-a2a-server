@@ -11,11 +11,15 @@ from a2a.server.request_handlers.default_request_handler import (
 from a2a.types import InternalError, Task, TaskIdParams, TaskNotCancelableError, TaskNotFoundError
 from a2a.utils.errors import ServerError
 
+from .metrics import A2A_STREAM_ACTIVE, A2A_STREAM_REQUESTS_TOTAL, get_metrics_registry
+
 logger = logging.getLogger(__name__)
 
 
 class CodexRequestHandler(DefaultRequestHandler):
     """Harden request lifecycle behavior around cancel, subscribe, and disconnects."""
+
+    _metrics = get_metrics_registry()
 
     async def on_cancel_task(
         self,
@@ -71,6 +75,8 @@ class CodexRequestHandler(DefaultRequestHandler):
             result_aggregator,
             producer_task,
         ) = await self._setup_message_execution(params, context)
+        self._metrics.inc_counter(A2A_STREAM_REQUESTS_TOTAL)
+        self._metrics.inc_gauge(A2A_STREAM_ACTIVE)
         logger.debug("A2A stream request started task_id=%s", task_id)
         consumer = EventConsumer(queue)
         producer_task.add_done_callback(consumer.agent_task_callback)
@@ -89,6 +95,7 @@ class CodexRequestHandler(DefaultRequestHandler):
             await queue.close(immediate=True)
             raise
         finally:
+            self._metrics.dec_gauge(A2A_STREAM_ACTIVE)
             logger.debug(
                 "A2A stream request closed task_id=%s completed=%s",
                 task_id,
