@@ -608,7 +608,7 @@ def _configure_logging(level: str) -> None:
 
 
 def main() -> None:
-    settings = Settings.from_env()
+    settings = Settings()
     app = create_app(settings)
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)

@@ -11,7 +11,7 @@ from codex_a2a_server.config import Settings
 def test_settings_missing_required():
     with mock.patch.dict(os.environ, {}, clear=True):
         with pytest.raises(ValidationError) as excinfo:
-            Settings.from_env()
+            Settings()
         # Should mention missing required fields
         errors = excinfo.value.errors()
         field_names = [e["loc"][0] for e in errors]
@@ -25,7 +25,7 @@ def test_settings_valid():
         "CODEX_MODEL_REASONING_EFFORT": "high",
     }
     with mock.patch.dict(os.environ, env, clear=True):
-        settings = Settings.from_env()
+        settings = Settings()
         assert settings.a2a_bearer_token == "test-token"
         assert settings.codex_timeout == 300.0
         assert settings.codex_model_reasoning_effort == "high"
@@ -38,7 +38,7 @@ def test_parse_oauth_scopes():
         "A2A_OAUTH_SCOPES": "scope1, scope2,,scope3 ",
     }
     with mock.patch.dict(os.environ, env, clear=True):
-        settings = Settings.from_env()
+        settings = Settings()
         assert settings.a2a_oauth_scopes == {"scope1": "", "scope2": "", "scope3": ""}
 
 
@@ -50,7 +50,7 @@ def test_settings_parse_ops_flags_and_interrupt_ttl():
         "A2A_INTERRUPT_REQUEST_TTL_SECONDS": "90",
     }
     with mock.patch.dict(os.environ, env, clear=True):
-        settings = Settings.from_env()
+        settings = Settings()
         assert settings.a2a_enable_health_endpoint is False
         assert settings.a2a_enable_session_shell is False
         assert settings.a2a_interrupt_request_ttl_seconds == 90
@@ -63,5 +63,5 @@ def test_settings_reject_invalid_interrupt_request_ttl():
     }
     with mock.patch.dict(os.environ, env, clear=True):
         with pytest.raises(ValidationError) as excinfo:
-            Settings.from_env()
+            Settings()
     assert "A2A_INTERRUPT_REQUEST_TTL_SECONDS" in str(excinfo.value)
