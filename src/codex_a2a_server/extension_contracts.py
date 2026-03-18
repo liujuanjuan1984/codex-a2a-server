@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:codex-a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:codex-a2a:wire-contract/v1"
 SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
 STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
@@ -218,6 +219,7 @@ WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
     "supported_methods",
     "protocol_version",
 )
+COMPATIBILITY_PROFILE_ID = "codex-a2a-core-plus-extensions-v1"
 
 
 def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
@@ -280,6 +282,104 @@ def build_wire_contract_extension_params(
             "type": "METHOD_NOT_SUPPORTED",
             "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
         },
+    }
+
+
+def build_compatibility_profile_params(
+    *,
+    protocol_version: str,
+    session_shell_enabled: bool,
+) -> dict[str, Any]:
+    active_session_query_methods = [
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_CONTROL_METHODS["prompt_async"],
+        SESSION_CONTROL_METHODS["command"],
+    ]
+    if session_shell_enabled:
+        active_session_query_methods.append(SESSION_CONTROL_METHODS["shell"])
+
+    method_retention: dict[str, dict[str, Any]] = {
+        method: {
+            "surface": "core",
+            "availability": "always",
+            "retention": "required",
+        }
+        for method in CORE_JSONRPC_METHODS
+    }
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": SESSION_QUERY_EXTENSION_URI,
+            }
+            for method in active_session_query_methods
+        }
+    )
+    method_retention[SESSION_CONTROL_METHODS["shell"]] = {
+        "surface": "extension",
+        "availability": "enabled" if session_shell_enabled else "disabled",
+        "retention": "deployment-conditional",
+        "extension_uri": SESSION_QUERY_EXTENSION_URI,
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+            }
+            for method in INTERRUPT_CALLBACK_METHODS.values()
+        }
+    )
+
+    extension_retention = {
+        SESSION_BINDING_EXTENSION_URI: {
+            "surface": "core-runtime-metadata",
+            "availability": "always",
+            "retention": "required",
+        },
+        STREAMING_EXTENSION_URI: {
+            "surface": "core-runtime-metadata",
+            "availability": "always",
+            "retention": "required",
+        },
+        SESSION_QUERY_EXTENSION_URI: {
+            "surface": "jsonrpc-extension",
+            "availability": "always",
+            "retention": "stable",
+        },
+        INTERRUPT_CALLBACK_EXTENSION_URI: {
+            "surface": "jsonrpc-extension",
+            "availability": "always",
+            "retention": "stable",
+        },
+    }
+
+    return {
+        "profile_id": COMPATIBILITY_PROFILE_ID,
+        "protocol_version": protocol_version,
+        "core": {
+            "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
+            "http_endpoints": list(CORE_HTTP_ENDPOINTS),
+        },
+        "extension_retention": extension_retention,
+        "method_retention": method_retention,
+        "consumer_guidance": [
+            ("Treat core A2A methods as the stable interoperability baseline for generic clients."),
+            (
+                "Treat codex.* and a2a.interrupt.* JSON-RPC methods as declared "
+                "custom extensions that remain stable within the current major line."
+            ),
+            (
+                "codex.sessions.shell is deployment-conditional: discover it from the "
+                "declared profile and current extension contracts before calling it."
+            ),
+        ],
     }
 
 

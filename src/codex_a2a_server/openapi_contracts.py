@@ -8,6 +8,7 @@ from .extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_CONTROL_METHODS,
     SESSION_QUERY_METHODS,
+    build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
@@ -215,6 +216,10 @@ def patch_openapi_contract(
         protocol_version=protocol_version,
         session_shell_enabled=session_shell_enabled,
     )
+    compatibility_profile = build_compatibility_profile_params(
+        protocol_version=protocol_version,
+        session_shell_enabled=session_shell_enabled,
+    )
     original_openapi = app.openapi
 
     def custom_openapi() -> dict[str, Any]:
@@ -238,6 +243,7 @@ def patch_openapi_contract(
                         "session_query": session_query,
                         "interrupt_callback": interrupt_callback,
                         "wire_contract": wire_contract,
+                        "compatibility_profile": compatibility_profile,
                     }
 
                     request_body = post.setdefault("requestBody", {})

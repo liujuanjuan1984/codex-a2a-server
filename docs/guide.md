@@ -65,6 +65,48 @@ Consumer guidance:
   current deployment, especially when a deployment-conditional method is
   disabled.
 
+## Compatibility Profile
+
+The service publishes a machine-readable compatibility profile through Agent
+Card and OpenAPI metadata. Its purpose is to declare:
+
+- the stable A2A core interoperability baseline
+- which custom JSON-RPC methods are deployment extensions
+- which extension surfaces are required runtime metadata contracts
+- which methods are deployment-conditional rather than always available
+
+Current profile shape:
+
+- `profile_id=codex-a2a-core-plus-extensions-v1`
+- core JSON-RPC methods:
+  - `message/send`
+  - `message/stream`
+  - `tasks/get`
+  - `tasks/cancel`
+  - `tasks/resubscribe`
+- core HTTP endpoints:
+  - `/v1/message:send`
+  - `/v1/message:stream`
+  - `/v1/tasks/{id}:subscribe`
+
+Retention guidance:
+
+- Treat core methods as the generic client interoperability baseline.
+- Treat shared session-binding and streaming metadata contracts as required for
+  the current deployment model; they are not optional documentation-only hints.
+- Treat `codex.*` and `a2a.interrupt.*` JSON-RPC methods as declared custom
+  extensions that remain stable within the current major line.
+- Treat `codex.sessions.shell` as deployment-conditional. Discover it from the
+  declared compatibility profile and extension contracts before calling it.
+
+Current implementation note:
+
+- The compatibility profile is declarative. It does not introduce a global
+  runtime `core-only` switch.
+- This is intentional: current shared session/stream/interrupt behavior is part
+  of the deployed interoperability contract, so a blanket runtime profile split
+  would be misleading without broader wire-level changes.
+
 ## Environment Variables
 
 - `CODEX_CLI_BIN`: Codex CLI binary path, default `codex`

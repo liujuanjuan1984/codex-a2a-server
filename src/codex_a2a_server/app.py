@@ -33,6 +33,7 @@ from .agent import CodexAgentExecutor
 from .codex_client import CodexClient
 from .config import Settings
 from .extension_contracts import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
     SESSION_BINDING_EXTENSION_URI,
@@ -41,6 +42,7 @@ from .extension_contracts import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
@@ -125,8 +127,8 @@ def _build_agent_card_description(
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), "
         "shared session-binding and streaming contracts, Codex session-query "
-        "extensions, shared interrupt callback extensions, and a machine-readable "
-        "wire contract."
+        "extensions, shared interrupt callback extensions, a machine-readable "
+        "compatibility profile, and a machine-readable wire contract."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -173,6 +175,10 @@ def build_agent_card(settings: Settings) -> AgentCard:
         deployment_context=deployment_context
     )
     wire_contract_extension_params = build_wire_contract_extension_params(
+        protocol_version=settings.a2a_protocol_version,
+        session_shell_enabled=settings.a2a_enable_session_shell,
+    )
+    compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
@@ -254,6 +260,15 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "streaming through shared JSON-RPC methods."
                     ),
                     params=interrupt_callback_extension_params,
+                ),
+                AgentExtension(
+                    uri=COMPATIBILITY_PROFILE_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Machine-readable compatibility profile for the current A2A core "
+                        "baseline, declared custom extensions, and retention policy."
+                    ),
+                    params=compatibility_profile_params,
                 ),
                 AgentExtension(
                     uri=WIRE_CONTRACT_EXTENSION_URI,
