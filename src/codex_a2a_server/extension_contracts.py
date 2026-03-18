@@ -223,7 +223,7 @@ def _build_method_contract_params(
 
 def build_session_binding_extension_params(
     *,
-    deployment_context: dict[str, str | bool],
+    deployment_context: dict[str, str | bool | int],
     directory_override_enabled: bool,
 ) -> dict[str, Any]:
     return {
@@ -285,13 +285,27 @@ def build_streaming_extension_params() -> dict[str, Any]:
 
 def build_session_query_extension_params(
     *,
-    deployment_context: dict[str, str | bool],
+    deployment_context: dict[str, str | bool | int],
+    session_shell_enabled: bool,
 ) -> dict[str, Any]:
+    active_method_contracts = {
+        key: contract
+        for key, contract in SESSION_QUERY_METHOD_CONTRACTS.items()
+        if session_shell_enabled or key != "shell"
+    }
+    active_query_methods = {
+        key: contract.method for key, contract in active_method_contracts.items()
+    }
+    active_control_methods = {
+        key: active_query_methods[key]
+        for key in SESSION_CONTROL_METHOD_KEYS
+        if key in active_query_methods
+    }
     method_contracts: dict[str, Any] = {}
     result_envelope_by_method: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
 
-    for method_contract in SESSION_QUERY_METHOD_CONTRACTS.values():
+    for method_contract in active_method_contracts.values():
         params_contract = _build_method_contract_params(
             required=method_contract.required_params,
             optional=method_contract.optional_params,
@@ -320,8 +334,8 @@ def build_session_query_extension_params(
             pagination_applies_to.append(method_contract.method)
 
     return {
-        "methods": dict(SESSION_QUERY_METHODS),
-        "control_methods": dict(SESSION_CONTROL_METHODS),
+        "methods": active_query_methods,
+        "control_methods": active_control_methods,
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
         "deployment_context": deployment_context,
@@ -351,7 +365,7 @@ def build_session_query_extension_params(
 
 def build_interrupt_callback_extension_params(
     *,
-    deployment_context: dict[str, str | bool],
+    deployment_context: dict[str, str | bool | int],
 ) -> dict[str, Any]:
     method_contracts: dict[str, Any] = {}
     for contract in INTERRUPT_CALLBACK_METHOD_CONTRACTS.values():

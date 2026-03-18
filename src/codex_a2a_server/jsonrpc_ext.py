@@ -300,7 +300,7 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_get_session_messages = methods["get_session_messages"]
         self._method_prompt_async = methods["prompt_async"]
         self._method_command = methods["command"]
-        self._method_shell = methods["shell"]
+        self._method_shell = methods.get("shell")
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
@@ -338,8 +338,9 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         session_control_methods = {
             self._method_prompt_async,
             self._method_command,
-            self._method_shell,
         }
+        if self._method_shell is not None:
+            session_control_methods.add(self._method_shell)
         interrupt_callback_methods = {
             self._method_reply_permission,
             self._method_reply_question,
@@ -670,7 +671,7 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 _validate_prompt_async_request(raw_request)
             elif base_request.method == self._method_command:
                 _validate_command_request(raw_request)
-            elif base_request.method == self._method_shell:
+            elif self._method_shell is not None and base_request.method == self._method_shell:
                 _validate_shell_request(raw_request)
         except _ControlValidationError as exc:
             return self._generate_error_response(

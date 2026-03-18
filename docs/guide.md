@@ -47,6 +47,8 @@ navigation, start from [README.md](../README.md) instead.
 - `A2A_PORT`: bind port, default `8000`
 - `A2A_BEARER_TOKEN`: required; service fails fast if unset
 - `A2A_STREAMING`: enable SSE streaming (`/v1/message:stream`), default `true`
+- `A2A_ENABLE_HEALTH_ENDPOINT`: enable the public lightweight `/health` probe, default `true`
+- `A2A_ENABLE_SESSION_SHELL`: expose `codex.sessions.shell` on JSON-RPC extensions, default `true`
 - `A2A_LOG_LEVEL`: `DEBUG/INFO/WARNING/ERROR`, default `INFO`
 - `A2A_LOG_PAYLOADS`: log A2A/Codex payload bodies, default `false`
 - `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
@@ -59,6 +61,8 @@ navigation, start from [README.md](../README.md) instead.
 - `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
   `(identity, contextId) -> Codex session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
+- `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: TTL for pending interrupt callbacks
+  before they become expired, default `3600`
 
 Configuration note:
 - The service configuration layer only accepts `CODEX_*` names for Codex-facing settings.
@@ -110,6 +114,9 @@ managed systemd deployment flow.
 
 ## Service Behavior
 
+- `GET /health` is a lightweight public probe endpoint. It returns service
+  status plus deployment-relevant flags such as streaming, session shell, and
+  interrupt TTL; it does not call upstream Codex.
 - The service forwards A2A `message:send` to Codex session/message calls.
 - Task state defaults to `input-required` to support multi-turn interactions.
 - Streaming (`/v1/message:stream`) emits incremental

@@ -41,7 +41,11 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert context["agent"] == "code-reviewer"
     assert context["variant"] == "safe"
     assert context["allow_directory_override"] is False
+    assert context["health_endpoint_enabled"] is True
+    assert context["interrupt_request_ttl_seconds"] == 3600
+    assert context["session_shell_enabled"] is True
     assert context["shared_workspace_across_consumers"] is True
+    assert context["streaming_enabled"] is True
     assert binding.params["metadata_field"] == "metadata.shared.session.id"
     assert binding.params["supported_metadata"] == [
         "shared.session.id",
@@ -90,3 +94,20 @@ def test_agent_card_chat_examples_include_project_hint_when_configured() -> None
     card = build_agent_card(make_settings(a2a_bearer_token="test-token", a2a_project="alpha"))
     chat_skill = next(skill for skill in card.skills if skill.id == "codex.chat")
     assert any("project alpha" in example for example in chat_skill.examples)
+
+
+def test_agent_card_omits_shell_method_when_disabled() -> None:
+    card = build_agent_card(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_enable_session_shell=False,
+            a2a_interrupt_request_ttl_seconds=45,
+        )
+    )
+    ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
+    session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
+
+    assert "shell" not in session_query.params["methods"]
+    assert "shell" not in session_query.params["control_methods"]
+    assert session_query.params["deployment_context"]["session_shell_enabled"] is False
+    assert session_query.params["deployment_context"]["interrupt_request_ttl_seconds"] == 45

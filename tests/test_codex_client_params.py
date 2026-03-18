@@ -128,6 +128,34 @@ async def test_question_reply_builds_answer_map() -> None:
             },
         }
     ]
+
+
+def test_interrupt_request_status_uses_configured_ttl(monkeypatch) -> None:
+    client = CodexClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            codex_timeout=1.0,
+            a2a_interrupt_request_ttl_seconds=5,
+        )
+    )
+    client._pending_server_requests["req-1"] = _PendingInterruptRequest(
+        binding=InterruptRequestBinding(
+            request_id="req-1",
+            interrupt_type="permission",
+            session_id="thr-1",
+            created_at=10.0,
+            provider_method="item/commandExecution/requestApproval",
+        ),
+        rpc_request_id=1,
+        params={"threadId": "thr-1"},
+    )
+
+    monkeypatch.setattr("codex_a2a_server.codex_client.time.monotonic", lambda: 14.0)
+    assert client.resolve_interrupt_request("req-1")[0] == "active"
+
+    monkeypatch.setattr("codex_a2a_server.codex_client.time.monotonic", lambda: 15.0)
+    assert client.resolve_interrupt_request("req-1")[0] == "expired"
+    assert client.resolve_interrupt_request("req-1")[0] == "missing"
     assert "200" not in client._pending_server_requests
 
 

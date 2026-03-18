@@ -151,6 +151,9 @@ Common CLI keys:
 - `a2a_port`
 - `a2a_public_url`
 - `a2a_streaming`
+- `a2a_enable_health_endpoint`
+- `a2a_enable_session_shell`
+- `a2a_interrupt_request_ttl_seconds`
 - `a2a_log_level`
 - `a2a_log_payloads`
 - `a2a_log_body_limit`
@@ -216,6 +219,9 @@ Per instance, deploy writes:
 - `config/codex.auth.env`: root-only `GH_TOKEN`
 - `config/codex.secret.env`: root-only provider keys
 - `config/a2a.env`: non-secret A2A settings
+  - `A2A_ENABLE_HEALTH_ENDPOINT`
+  - `A2A_ENABLE_SESSION_SHELL`
+  - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`
 - `config/a2a.secret.env`: root-only `A2A_BEARER_TOKEN`
 
 The systemd unit loads both `codex.env` and `a2a.env`, so Codex subprocess

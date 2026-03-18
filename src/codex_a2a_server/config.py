@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     a2a_version: str = Field(default=__version__, alias="A2A_VERSION")
     a2a_protocol_version: str = Field(default="0.3.0", alias="A2A_PROTOCOL_VERSION")
     a2a_streaming: bool = Field(default=True, alias="A2A_STREAMING")
+    a2a_enable_health_endpoint: bool = Field(default=True, alias="A2A_ENABLE_HEALTH_ENDPOINT")
+    a2a_enable_session_shell: bool = Field(default=True, alias="A2A_ENABLE_SESSION_SHELL")
     a2a_log_level: str = Field(default="INFO", alias="A2A_LOG_LEVEL")
     a2a_log_payloads: bool = Field(default=False, alias="A2A_LOG_PAYLOADS")
     a2a_log_body_limit: int = Field(default=0, alias="A2A_LOG_BODY_LIMIT")
@@ -99,6 +101,10 @@ class Settings(BaseSettings):
     # Session cache settings
     a2a_session_cache_ttl_seconds: int = Field(default=3600, alias="A2A_SESSION_CACHE_TTL_SECONDS")
     a2a_session_cache_maxsize: int = Field(default=10_000, alias="A2A_SESSION_CACHE_MAXSIZE")
+    a2a_interrupt_request_ttl_seconds: int = Field(
+        default=3600,
+        alias="A2A_INTERRUPT_REQUEST_TTL_SECONDS",
+    )
 
     @field_validator("a2a_oauth_scopes", mode="before")
     @classmethod
@@ -113,6 +119,13 @@ class Settings(BaseSettings):
             if scope:
                 scopes[scope] = ""
         return scopes
+
+    @field_validator("a2a_interrupt_request_ttl_seconds")
+    @classmethod
+    def validate_interrupt_request_ttl_seconds(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("A2A_INTERRUPT_REQUEST_TTL_SECONDS must be >= 1")
+        return value
 
     @classmethod
     def from_env(cls) -> Settings:

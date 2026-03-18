@@ -78,10 +78,14 @@ class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
         return context
 
 
-def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
-    context: dict[str, str | bool] = {
+def _build_deployment_context(settings: Settings) -> dict[str, str | bool | int]:
+    context: dict[str, str | bool | int] = {
         "allow_directory_override": settings.a2a_allow_directory_override,
+        "health_endpoint_enabled": settings.a2a_enable_health_endpoint,
+        "interrupt_request_ttl_seconds": settings.a2a_interrupt_request_ttl_seconds,
+        "session_shell_enabled": settings.a2a_enable_session_shell,
         "shared_workspace_across_consumers": True,
+        "streaming_enabled": settings.a2a_streaming,
     }
     if settings.a2a_project:
         context["project"] = settings.a2a_project
@@ -99,7 +103,7 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
 
 
 def _build_agent_card_description(
-    settings: Settings, deployment_context: dict[str, str | bool]
+    settings: Settings, deployment_context: dict[str, str | bool | int]
 ) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for Codex."
     summary = (
@@ -147,7 +151,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
     )
     streaming_extension_params = build_streaming_extension_params()
     session_query_extension_params = build_session_query_extension_params(
-        deployment_context=deployment_context
+        deployment_context=deployment_context,
+        session_shell_enabled=settings.a2a_enable_session_shell,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         deployment_context=deployment_context
@@ -291,12 +296,16 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    public_paths = {
+        "/.well-known/agent-card.json",
+        "/.well-known/agent.json",
+    }
+    if settings.a2a_enable_health_endpoint:
+        public_paths.add("/health")
+
     @app.middleware("http")
     async def bearer_auth(request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path in {
-            "/.well-known/agent-card.json",
-            "/.well-known/agent.json",
-        }:
+        if request.method == "OPTIONS" or request.url.path in public_paths:
             return await call_next(request)
 
         auth_header = request.headers.get("authorization", "")
@@ -330,6 +339,13 @@ def create_app(settings: Settings) -> FastAPI:
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
+    jsonrpc_methods = {
+        **SESSION_QUERY_METHODS,
+        **SESSION_CONTROL_METHODS,
+        **INTERRUPT_CALLBACK_METHODS,
+    }
+    if not settings.a2a_enable_session_shell:
+        jsonrpc_methods.pop("shell", None)
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
     app = CodexSessionQueryJSONRPCApplication(
@@ -337,11 +353,7 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         codex_client=client,
-        methods={
-            **SESSION_QUERY_METHODS,
-            **SESSION_CONTROL_METHODS,
-            **INTERRUPT_CALLBACK_METHODS,
-        },
+        methods=jsonrpc_methods,
         directory_resolver=executor.resolve_directory,
         session_claim=executor.claim_session,
         session_claim_finalize=executor.finalize_session_claim,
@@ -359,9 +371,18 @@ def create_app(settings: Settings) -> FastAPI:
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
 
-    @app.get("/health")
-    async def health_check():
-        return {"status": "ok"}
+    if settings.a2a_enable_health_endpoint:
+
+        @app.get("/health")
+        async def health_check():
+            return {
+                "status": "ok",
+                "service": "codex-a2a-server",
+                "version": settings.a2a_version,
+                "streaming_enabled": settings.a2a_streaming,
+                "session_shell_enabled": settings.a2a_enable_session_shell,
+                "interrupt_request_ttl_seconds": settings.a2a_interrupt_request_ttl_seconds,
+            }
 
     def _parse_json_body(body_bytes: bytes) -> dict | None:
         try:

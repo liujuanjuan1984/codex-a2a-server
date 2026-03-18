@@ -652,6 +652,49 @@ async def test_session_control_rejects_invalid_request_shape(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_session_control_shell_method_is_not_exposed_when_disabled(monkeypatch):
+    import codex_a2a_server.app as app_module
+
+    dummy = DummyCodexClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            a2a_log_payloads=False,
+            a2a_enable_session_shell=False,
+            **_BASE_SETTINGS,
+        )
+    )
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(
+            a2a_bearer_token="t-1",
+            a2a_log_payloads=False,
+            a2a_enable_session_shell=False,
+            **_BASE_SETTINGS,
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 26,
+                "method": "codex.sessions.shell",
+                "params": {
+                    "session_id": "s-1",
+                    "request": {"command": "pwd"},
+                },
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32601
+        assert dummy.last_shell is None
+
+
+@pytest.mark.asyncio
 async def test_session_control_rejects_invalid_metadata_directory(monkeypatch):
     import codex_a2a_server.app as app_module
 

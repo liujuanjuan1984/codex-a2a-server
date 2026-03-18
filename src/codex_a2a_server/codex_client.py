@@ -26,7 +26,6 @@ _DEFAULT_CLIENT_NAME = "codex_a2a_server"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Server"
 _DEFAULT_CLIENT_VERSION = "0.1.0"
 _EVENT_QUEUE_MAXSIZE = 2048
-_INTERRUPT_REQUEST_TTL_SECONDS = 3600
 
 
 def _normalized_string(value: Any) -> str | None:
@@ -239,6 +238,7 @@ class CodexClient:
         self._listen = settings.codex_app_server_listen
         self._default_model = settings.codex_model
         self._model_reasoning_effort = settings.codex_model_reasoning_effort
+        self._interrupt_request_ttl_seconds = settings.a2a_interrupt_request_ttl_seconds
         self._log_payloads = settings.a2a_log_payloads
 
         self._process: asyncio.subprocess.Process | None = None
@@ -994,7 +994,7 @@ class CodexClient:
         self,
         binding: InterruptRequestBinding,
     ) -> str:
-        expires_at = binding.created_at + float(_INTERRUPT_REQUEST_TTL_SECONDS)
+        expires_at = binding.created_at + float(self._interrupt_request_ttl_seconds)
         if expires_at <= time.monotonic():
             return "expired"
         return "active"

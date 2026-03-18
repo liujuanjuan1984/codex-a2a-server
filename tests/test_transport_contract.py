@@ -26,6 +26,46 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
     assert "/v1/tasks/{id}:resubscribe" not in route_paths
 
 
+def test_health_route_can_be_disabled() -> None:
+    app = create_app(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_enable_health_endpoint=False,
+        )
+    )
+    route_paths = {route.path for route in app.router.routes if hasattr(route, "path")}
+
+    assert "/health" not in route_paths
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_is_public_and_reports_runtime_flags(monkeypatch) -> None:
+    import codex_a2a_server.app as app_module
+
+    monkeypatch.setattr(app_module, "CodexClient", DummyChatCodexClient)
+    app = app_module.create_app(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_enable_session_shell=False,
+            a2a_interrupt_request_ttl_seconds=90,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "ok",
+        "service": "codex-a2a-server",
+        "version": "0.1.0",
+        "streaming_enabled": True,
+        "session_shell_enabled": False,
+        "interrupt_request_ttl_seconds": 90,
+    }
+
+
 @pytest.mark.asyncio
 async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) -> None:
     import codex_a2a_server.app as app_module
