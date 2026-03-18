@@ -10,7 +10,11 @@ from codex_a2a_server.codex_client import (
     InterruptRequestBinding,
     _PendingInterruptRequest,
 )
-from tests.helpers import make_settings, replay_codex_notification_fixture
+from tests.helpers import (
+    make_settings,
+    replay_codex_jsonrpc_line_fixture,
+    replay_codex_notification_fixture,
+)
 
 
 @pytest.mark.asyncio
@@ -482,6 +486,31 @@ async def test_handle_notification_replays_real_command_execution_fixture() -> N
 
 
 @pytest.mark.asyncio
+async def test_read_stdout_loop_replays_real_command_execution_jsonrpc_lines() -> None:
+    fixture, events = await replay_codex_jsonrpc_line_fixture(
+        "codex_app_server",
+        "command_execution_output_delta.json",
+        chunk_sizes=(97, 211, 503),
+    )
+    tool_events = [event for event in events if event["properties"]["part"]["type"] == "tool_call"]
+
+    assert fixture["response_text"] == "DONE"
+    assert [event["type"] for event in tool_events] == [
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+    ]
+    assert [event["properties"]["delta"]["kind"] for event in tool_events] == [
+        "state",
+        "output_delta",
+        "output_delta",
+        "state",
+    ]
+    assert tool_events[-1]["properties"]["delta"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_handle_notification_replays_real_file_change_fixture() -> None:
     fixture, events = await replay_codex_notification_fixture(
         "codex_app_server",
@@ -527,6 +556,46 @@ async def test_handle_notification_replays_real_file_change_fixture() -> None:
             "change_count": 1,
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_read_stdout_loop_replays_real_file_change_jsonrpc_lines() -> None:
+    fixture, events = await replay_codex_jsonrpc_line_fixture(
+        "codex_app_server",
+        "file_change_output_delta.json",
+        chunk_sizes=(41, 89, 233),
+    )
+    tool_events = [event for event in events if event["properties"]["part"]["type"] == "tool_call"]
+
+    assert fixture["response_text"] == "DONE"
+    assert [event["type"] for event in tool_events] == [
+        "message.part.updated",
+        "message.part.updated",
+        "message.part.updated",
+    ]
+    assert tool_events[1]["properties"]["delta"]["kind"] == "output_delta"
+    assert tool_events[2]["properties"]["delta"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_read_stdout_loop_drops_invalid_and_non_object_json_lines(caplog) -> None:
+    with caplog.at_level("DEBUG", logger="codex_a2a_server.codex_client"):
+        fixture, events = await replay_codex_jsonrpc_line_fixture(
+            "codex_app_server",
+            "command_execution_output_delta.json",
+            prefix_lines=[
+                b'{"method":"turn/started","params":\n',
+                b"42\n",
+                b"[1,2,3]\n",
+            ],
+            chunk_sizes=(19, 37, 211),
+        )
+
+    assert fixture["response_text"] == "DONE"
+    assert any(event["type"] == "message.part.updated" for event in events)
+    assert "drop non-json line from codex app-server" in caplog.text
+    assert "drop non-object jsonrpc payload from codex app-server: int" in caplog.text
+    assert "drop non-object jsonrpc payload from codex app-server: list" in caplog.text
 
 
 @pytest.mark.asyncio

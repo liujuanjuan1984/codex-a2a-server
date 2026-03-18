@@ -393,6 +393,12 @@ class CodexClient:
                 except json.JSONDecodeError:
                     logger.debug("drop non-json line from codex app-server: %s", raw)
                     continue
+                if not isinstance(message, dict):
+                    logger.debug(
+                        "drop non-object jsonrpc payload from codex app-server: %s",
+                        type(message).__name__,
+                    )
+                    continue
                 await self._dispatch_message(message)
         except asyncio.CancelledError:
             raise
