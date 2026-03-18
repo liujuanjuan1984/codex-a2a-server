@@ -150,7 +150,6 @@ Common CLI keys:
 - `a2a_host`
 - `a2a_port`
 - `a2a_public_url`
-- `a2a_streaming`
 - `a2a_enable_health_endpoint`
 - `a2a_enable_session_shell`
 - `a2a_interrupt_request_ttl_seconds`

@@ -136,7 +136,6 @@ Current implementation note:
 - `A2A_HOST`: bind host, default `127.0.0.1`
 - `A2A_PORT`: bind port, default `8000`
 - `A2A_BEARER_TOKEN`: required; service fails fast if unset
-- `A2A_STREAMING`: enable SSE streaming (`/v1/message:stream`), default `true`
 - `A2A_ENABLE_HEALTH_ENDPOINT`: enable the public lightweight `/health` probe, default `true`
 - `A2A_ENABLE_SESSION_SHELL`: expose `codex.sessions.shell` on JSON-RPC extensions, default `true`
 - `A2A_LOG_LEVEL`: `DEBUG/INFO/WARNING/ERROR`, default `INFO`
@@ -144,10 +143,6 @@ Current implementation note:
 - `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
 - `A2A_DOCUMENTATION_URL`: optional URL exposed via Agent Card
   `documentationUrl`
-- `A2A_OAUTH_AUTHORIZATION_URL`: OAuth2 authorization URL (declarative only)
-- `A2A_OAUTH_TOKEN_URL`: OAuth2 token URL (declarative only)
-- `A2A_OAUTH_METADATA_URL`: OAuth2 metadata URL (optional)
-- `A2A_OAUTH_SCOPES`: comma-separated OAuth2 scopes (declarative only)
 - `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
   `(identity, contextId) -> Codex session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
@@ -211,6 +206,9 @@ managed systemd deployment flow.
   status plus deployment-relevant flags such as streaming, session shell, and
   interrupt TTL; it does not call upstream Codex.
 - The service forwards A2A `message:send` to Codex session/message calls.
+- Streaming is always enabled for this service surface. `/v1/message:stream`
+  and JSON-RPC `message/stream` are stable core capabilities rather than
+  deployment-time toggles.
 - `codex.sessions.shell` is a session-scoped shell control method for
   ownership, attribution, and traceability. It keeps `session_id` in the A2A
   contract, but the underlying execution still uses Codex `command/exec`
@@ -301,11 +299,6 @@ managed systemd deployment flow.
     boundary bypass.
   - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is
     accepted.
-- OAuth2 settings are currently declarative in Agent Card only; runtime token
-  verification for OAuth2 is not implemented yet.
-- Agent Card declares OAuth2 only when both
-  `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
-
 ## Authentication Setup For Local Examples
 
 For local development examples, prefer generating a temporary token once and

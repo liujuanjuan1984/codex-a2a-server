@@ -21,6 +21,13 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert "all consumers share the same underlying Codex workspace/environment" in card.description
 
 
+def test_agent_card_declares_bearer_only_security() -> None:
+    card = build_agent_card(make_settings(a2a_bearer_token="test-token"))
+
+    assert set((card.security_schemes or {}).keys()) == {"bearerAuth"}
+    assert card.security == [{"bearerAuth": []}]
+
+
 def test_agent_card_injects_deployment_context_into_extensions() -> None:
     card = build_agent_card(
         make_settings(

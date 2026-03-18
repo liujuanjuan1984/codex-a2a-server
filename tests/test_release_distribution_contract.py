@@ -14,6 +14,8 @@ def test_readme_documents_released_cli_installation_via_uv_tool() -> None:
     assert "CODEX_DIRECTORY=/abs/path/to/project" in README_TEXT
     assert "create a PR from the working branch" in README_TEXT
     assert "merge into `main` after human review" in README_TEXT
+    assert "[Compatibility Guide](docs/compatibility.md)" in README_TEXT
+    assert "[Contributing Guide](CONTRIBUTING.md)" in README_TEXT
 
 
 def test_publish_workflow_builds_and_smoke_tests_release_artifacts() -> None:

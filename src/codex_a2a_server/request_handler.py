@@ -122,7 +122,9 @@ class CodexRequestHandler(DefaultRequestHandler):
         if params.configuration and params.configuration.blocking is False:
             blocking = False
 
+        result = None
         interrupted_or_non_blocking = False
+        continuation_task = None
         try:
 
             async def push_notification_callback() -> None:
@@ -131,11 +133,15 @@ class CodexRequestHandler(DefaultRequestHandler):
             (
                 result,
                 interrupted_or_non_blocking,
+                continuation_task,
             ) = await result_aggregator.consume_and_break_on_interrupt(
                 consumer,
                 blocking=blocking,
                 event_callback=push_notification_callback,
             )
+            if continuation_task is not None:
+                continuation_task.set_name(f"continue_consuming:{task_id}")
+                self._track_background_task(continuation_task)
         except Exception:
             logger.exception("Agent execution failed")
             raise
