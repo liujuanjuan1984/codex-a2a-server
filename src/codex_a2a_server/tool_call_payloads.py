@@ -7,7 +7,6 @@ from typing import Any, Literal, TypeAlias, cast
 from a2a._base import A2ABaseModel
 from pydantic import AliasChoices, Field, ValidationError, field_validator
 
-ToolCallKind = Literal["state", "output_delta"]
 ToolCallSourceMethod = Literal["commandExecution", "fileChange"]
 
 
