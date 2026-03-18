@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -357,6 +358,7 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
         provided = auth_header.split(" ", 1)[1].strip()
         if not secrets.compare_digest(provided, token):
             return _unauthorized_response()
+        request.state.user_identity = f"bearer:{hashlib.sha256(provided.encode()).hexdigest()[:12]}"
 
         return await call_next(request)
 
