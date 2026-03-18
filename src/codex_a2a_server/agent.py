@@ -33,12 +33,8 @@ from .output_mapping import (
     extract_token_usage,
     merge_token_usage,
 )
-from .streaming import (
-    BlockType,
-    StreamOutputState,
-    build_stream_artifact_metadata,
-    consume_codex_stream,
-)
+from .stream_state import BlockType, StreamOutputState, build_stream_artifact_metadata
+from .streaming import consume_codex_stream
 
 logger = logging.getLogger(__name__)
 
