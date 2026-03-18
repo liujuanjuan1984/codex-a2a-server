@@ -33,13 +33,20 @@ from .agent import CodexAgentExecutor
 from .codex_client import CodexClient
 from .config import Settings
 from .extension_contracts import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    SESSION_BINDING_EXTENSION_URI,
     SESSION_CONTROL_METHODS,
+    SESSION_QUERY_EXTENSION_URI,
     SESSION_QUERY_METHODS,
+    STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_supported_jsonrpc_methods,
+    build_wire_contract_extension_params,
 )
 from .jsonrpc_ext import CodexSessionQueryJSONRPCApplication
 from .logging_context import (
@@ -56,11 +63,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
-
-SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
-STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
-SESSION_QUERY_EXTENSION_URI = "urn:codex-a2a:codex-session-query/v1"
-INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
 
 class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
@@ -123,7 +125,8 @@ def _build_agent_card_description(
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), "
         "shared session-binding and streaming contracts, Codex session-query "
-        "extensions, and shared interrupt callback extensions."
+        "extensions, shared interrupt callback extensions, and a machine-readable "
+        "wire contract."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -168,6 +171,10 @@ def build_agent_card(settings: Settings) -> AgentCard:
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         deployment_context=deployment_context
+    )
+    wire_contract_extension_params = build_wire_contract_extension_params(
+        protocol_version=settings.a2a_protocol_version,
+        session_shell_enabled=settings.a2a_enable_session_shell,
     )
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
@@ -247,6 +254,15 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "streaming through shared JSON-RPC methods."
                     ),
                     params=interrupt_callback_extension_params,
+                ),
+                AgentExtension(
+                    uri=WIRE_CONTRACT_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Declare the current JSON-RPC/HTTP method boundary and the "
+                        "unsupported method error contract for generic A2A clients."
+                    ),
+                    params=wire_contract_extension_params,
                 ),
             ],
         ),
@@ -368,6 +384,10 @@ def create_app(settings: Settings) -> FastAPI:
         context_builder=context_builder,
         codex_client=client,
         methods=jsonrpc_methods,
+        protocol_version=settings.a2a_protocol_version,
+        supported_methods=build_supported_jsonrpc_methods(
+            session_shell_enabled=settings.a2a_enable_session_shell
+        ),
         directory_resolver=executor.resolve_directory,
         session_claim=executor.claim_session,
         session_claim_finalize=executor.finalize_session_claim,
@@ -628,6 +648,7 @@ def create_app(settings: Settings) -> FastAPI:
         app,
         deployment_context=deployment_context,
         directory_override_enabled=settings.a2a_allow_directory_override,
+        protocol_version=settings.a2a_protocol_version,
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
 

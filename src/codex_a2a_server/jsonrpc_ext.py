@@ -155,6 +155,8 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *args: Any,
         codex_client: CodexClient,
         methods: dict[str, str],
+        protocol_version: str,
+        supported_methods: list[str],
         directory_resolver=None,
         session_claim=None,
         session_claim_finalize=None,
@@ -172,6 +174,20 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
+        self._protocol_version = protocol_version
+        self._supported_methods = list(supported_methods)
+        self._supported_method_set = set(supported_methods)
+        self._extension_method_set = {
+            self._method_list_sessions,
+            self._method_get_session_messages,
+            self._method_prompt_async,
+            self._method_command,
+            self._method_reply_permission,
+            self._method_reply_question,
+            self._method_reject_question,
+        }
+        if self._method_shell is not None:
+            self._extension_method_set.add(self._method_shell)
         self._directory_resolver = directory_resolver
         self._session_claim = session_claim
         self._session_claim_finalize = session_claim_finalize
@@ -199,6 +215,14 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             # Delegate to base implementation for consistent error handling.
             return await super()._handle_requests(request)
 
+        if base_request.method not in self._supported_method_set:
+            if base_request.id is None:
+                return Response(status_code=204)
+            return self._unsupported_method_response(base_request.id, base_request.method)
+
+        if base_request.method not in self._extension_method_set:
+            return await super()._handle_requests(request)
+
         session_query_methods = {
             self._method_list_sessions,
             self._method_get_session_messages,
@@ -209,17 +233,6 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         }
         if self._method_shell is not None:
             session_control_methods.add(self._method_shell)
-        interrupt_callback_methods = {
-            self._method_reply_permission,
-            self._method_reply_question,
-            self._method_reject_question,
-        }
-        supported_methods = (
-            session_query_methods | session_control_methods | interrupt_callback_methods
-        )
-        if base_request.method not in supported_methods:
-            return await super()._handle_requests(request)
-
         params = base_request.params or {}
         if not isinstance(params, dict):
             return self._generate_error_response(
@@ -754,6 +767,25 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 code=code,
                 message=message,
                 data=data,
+            ),
+        )
+
+    def _unsupported_method_response(
+        self,
+        request_id: str | int,
+        method: str,
+    ) -> JSONResponse:
+        return self._generate_error_response(
+            request_id,
+            JSONRPCError(
+                code=-32601,
+                message=f"Unsupported method: {method}",
+                data={
+                    "type": "METHOD_NOT_SUPPORTED",
+                    "method": method,
+                    "supported_methods": self._supported_methods,
+                    "protocol_version": self._protocol_version,
+                },
             ),
         )
 

@@ -3,6 +3,7 @@ from codex_a2a_server.app import (
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
 )
 from tests.helpers import make_settings
@@ -14,6 +15,7 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert "HTTP+JSON and JSON-RPC transports" in card.description
     assert "message/send, message/stream" in card.description
     assert "tasks/get, tasks/cancel" in card.description
+    assert "machine-readable wire contract" in card.description
     assert "all consumers share the same underlying Codex workspace/environment" in card.description
 
 
@@ -94,6 +96,24 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert "expected_interrupt_type" in interrupt.params["errors"]["error_data_fields"]
     assert "actual_interrupt_type" in interrupt.params["errors"]["error_data_fields"]
 
+    wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert wire_contract.params["protocol_version"] == "0.3.0"
+    assert wire_contract.params["core"]["jsonrpc_methods"] == [
+        "message/send",
+        "message/stream",
+        "tasks/get",
+        "tasks/cancel",
+        "tasks/resubscribe",
+    ]
+    assert "codex.sessions.shell" in wire_contract.params["all_jsonrpc_methods"]
+    assert wire_contract.params["unsupported_method_error"]["code"] == -32601
+    assert wire_contract.params["unsupported_method_error"]["data_fields"] == [
+        "type",
+        "method",
+        "supported_methods",
+        "protocol_version",
+    ]
+
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:
     card = build_agent_card(make_settings(a2a_bearer_token="test-token", a2a_project="alpha"))
@@ -117,3 +137,11 @@ def test_agent_card_omits_shell_method_when_disabled() -> None:
     assert "codex.sessions.shell" not in session_query.params["method_contracts"]
     assert session_query.params["deployment_context"]["session_shell_enabled"] is False
     assert session_query.params["deployment_context"]["interrupt_request_ttl_seconds"] == 45
+    wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert "codex.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
+    assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
+        "codex.sessions.shell": {
+            "reason": "disabled_by_configuration",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+    }

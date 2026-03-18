@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+WIRE_CONTRACT_EXTENSION_URI = "urn:codex-a2a:wire-contract/v1"
+SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
+STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
+SESSION_QUERY_EXTENSION_URI = "urn:codex-a2a:codex-session-query/v1"
+INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
+
 SHARED_METADATA_NAMESPACE = "shared"
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
@@ -193,6 +199,88 @@ INTERRUPT_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "fields",
     "request_id",
 )
+
+CORE_JSONRPC_METHODS: tuple[str, ...] = (
+    "message/send",
+    "message/stream",
+    "tasks/get",
+    "tasks/cancel",
+    "tasks/resubscribe",
+)
+CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
+    "/v1/message:send",
+    "/v1/message:stream",
+    "/v1/tasks/{id}:subscribe",
+)
+WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "method",
+    "supported_methods",
+    "protocol_version",
+)
+
+
+def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
+    methods = [
+        *CORE_JSONRPC_METHODS,
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_CONTROL_METHODS["prompt_async"],
+        SESSION_CONTROL_METHODS["command"],
+        *INTERRUPT_CALLBACK_METHODS.values(),
+    ]
+    if session_shell_enabled:
+        methods.append(SESSION_CONTROL_METHODS["shell"])
+    return methods
+
+
+def build_wire_contract_extension_params(
+    *,
+    protocol_version: str,
+    session_shell_enabled: bool,
+) -> dict[str, Any]:
+    extension_jsonrpc_methods = [
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_CONTROL_METHODS["prompt_async"],
+        SESSION_CONTROL_METHODS["command"],
+        *INTERRUPT_CALLBACK_METHODS.values(),
+    ]
+    conditionally_available_methods: dict[str, dict[str, str]] = {}
+    if session_shell_enabled:
+        extension_jsonrpc_methods.append(SESSION_CONTROL_METHODS["shell"])
+    else:
+        conditionally_available_methods[SESSION_CONTROL_METHODS["shell"]] = {
+            "reason": "disabled_by_configuration",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+
+    all_methods = build_supported_jsonrpc_methods(session_shell_enabled=session_shell_enabled)
+    return {
+        "protocol_version": protocol_version,
+        "preferred_transport": "HTTP+JSON",
+        "additional_transports": ["JSON-RPC"],
+        "core": {
+            "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
+            "http_endpoints": list(CORE_HTTP_ENDPOINTS),
+        },
+        "extensions": {
+            "jsonrpc_methods": extension_jsonrpc_methods,
+            "conditionally_available_methods": conditionally_available_methods,
+            "extension_uris": [
+                SESSION_BINDING_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+                SESSION_QUERY_EXTENSION_URI,
+                INTERRUPT_CALLBACK_EXTENSION_URI,
+            ],
+        },
+        "all_jsonrpc_methods": all_methods,
+        "unsupported_method_error": {
+            "code": -32601,
+            "type": "METHOD_NOT_SUPPORTED",
+            "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
+        },
+    }
 
 
 def _build_method_contract_params(

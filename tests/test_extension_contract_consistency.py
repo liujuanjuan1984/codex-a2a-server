@@ -6,6 +6,7 @@ from codex_a2a_server.app import (
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
     create_app,
 )
@@ -14,6 +15,7 @@ from codex_a2a_server.extension_contracts import (
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_wire_contract_extension_params,
 )
 from tests.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.helpers import make_settings
@@ -145,6 +147,7 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     streaming = contract["streaming"]
     session_query = contract["session_query"]
     interrupt_callback = contract["interrupt_callback"]
+    wire_contract = contract["wire_contract"]
     deployment_context = session_query["deployment_context"]
     expected_session_binding = build_session_binding_extension_params(
         deployment_context=deployment_context,
@@ -158,6 +161,10 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     expected_interrupt_callback = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
     )
+    expected_wire_contract = build_wire_contract_extension_params(
+        protocol_version=settings.a2a_protocol_version,
+        session_shell_enabled=settings.a2a_enable_session_shell,
+    )
 
     assert session_binding == expected_session_binding, (
         "OpenAPI session binding contract drifted from extension_contracts SSOT."
@@ -170,6 +177,9 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     )
     assert interrupt_callback == expected_interrupt_callback, (
         "OpenAPI interrupt callback contract drifted from extension_contracts SSOT."
+    )
+    assert wire_contract == expected_wire_contract, (
+        "OpenAPI wire contract drifted from extension_contracts SSOT."
     )
 
 
@@ -186,6 +196,7 @@ def test_openapi_and_agent_card_extension_contracts_match() -> None:
     assert (
         post_contract["interrupt_callback"] == ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI].params
     )
+    assert post_contract["wire_contract"] == ext_by_uri[WIRE_CONTRACT_EXTENSION_URI].params
 
 
 def test_openapi_jsonrpc_examples_match_declared_extension_contracts() -> None:

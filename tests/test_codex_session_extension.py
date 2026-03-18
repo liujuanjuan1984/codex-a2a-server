@@ -691,6 +691,9 @@ async def test_session_control_shell_method_is_not_exposed_when_disabled(monkeyp
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32601
+        assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
+        assert payload["error"]["data"]["method"] == "codex.sessions.shell"
+        assert "codex.sessions.shell" not in payload["error"]["data"]["supported_methods"]
         assert dummy.last_shell is None
 
 

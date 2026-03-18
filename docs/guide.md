@@ -16,6 +16,54 @@ navigation, start from [README.md](../README.md) instead.
 - Payload schema is transport-specific and should not be mixed:
   - REST send payload usually uses `message.content` and role values like `ROLE_USER`
   - JSON-RPC `message/send` payload uses `params.message.parts` and role values `user` / `agent`
+- The JSON-RPC entrypoint now publishes an explicit wire contract for the
+  supported method set and unsupported-method error shape.
+
+## Wire Contract
+
+The service publishes a machine-readable wire contract through Agent Card and
+OpenAPI metadata.
+
+Use it to answer:
+
+- which JSON-RPC methods are part of the current A2A core baseline
+- which JSON-RPC methods are custom extensions
+- which methods are deployment-conditional rather than always available
+- what error shape is returned for unsupported JSON-RPC methods
+
+Current behavior:
+
+- core JSON-RPC methods:
+  - `message/send`
+  - `message/stream`
+  - `tasks/get`
+  - `tasks/cancel`
+  - `tasks/resubscribe`
+- core HTTP endpoints:
+  - `/v1/message:send`
+  - `/v1/message:stream`
+  - `/v1/tasks/{id}:subscribe`
+- extension JSON-RPC methods are declared separately from the core baseline
+- `codex.sessions.shell` becomes deployment-conditional when
+  `A2A_ENABLE_SESSION_SHELL=false`
+
+Unsupported method contract:
+
+- JSON-RPC error code: `-32601`
+- error message: `Unsupported method: <method>`
+- error data fields:
+  - `type=METHOD_NOT_SUPPORTED`
+  - `method`
+  - `supported_methods`
+  - `protocol_version`
+
+Consumer guidance:
+
+- Discover the current method set from Agent Card / OpenAPI before calling
+  custom JSON-RPC methods.
+- Treat `supported_methods` in `error.data` as the runtime truth for the
+  current deployment, especially when a deployment-conditional method is
+  disabled.
 
 ## Environment Variables
 

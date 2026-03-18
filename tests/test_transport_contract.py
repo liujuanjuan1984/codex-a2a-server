@@ -64,6 +64,10 @@ def test_openapi_rest_message_routes_include_schema_examples_and_extension_contr
     stream_contract = paths["/v1/message:stream"]["post"].get("x-a2a-streaming")
     assert isinstance(stream_contract, dict)
 
+    root_contracts = paths["/"]["post"].get("x-a2a-extension-contracts")
+    assert isinstance(root_contracts, dict)
+    assert "wire_contract" in root_contracts
+
 
 def test_openapi_jsonrpc_examples_include_core_and_extension_methods() -> None:
     app = create_app(make_settings(a2a_bearer_token="test-token"))
@@ -213,6 +217,67 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
         assert rpc_resp.status_code == 200
         payload = rpc_resp.json()
         assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_jsonrpc_unsupported_method_returns_supported_method_contract(monkeypatch) -> None:
+    import codex_a2a_server.app as app_module
+
+    monkeypatch.setattr(app_module, "CodexClient", DummyChatCodexClient)
+    settings = make_settings(a2a_bearer_token="test-token")
+    app = app_module.create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 40, "method": "SendMessage", "params": {}},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"]["code"] == -32601
+    assert payload["error"]["message"] == "Unsupported method: SendMessage"
+    assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
+    assert payload["error"]["data"]["method"] == "SendMessage"
+    assert payload["error"]["data"]["protocol_version"] == settings.a2a_protocol_version
+    assert "message/send" in payload["error"]["data"]["supported_methods"]
+    assert "codex.sessions.list" in payload["error"]["data"]["supported_methods"]
+
+
+@pytest.mark.asyncio
+async def test_jsonrpc_disabled_shell_reports_current_supported_methods(monkeypatch) -> None:
+    import codex_a2a_server.app as app_module
+
+    monkeypatch.setattr(app_module, "CodexClient", DummyChatCodexClient)
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_enable_session_shell=False,
+    )
+    app = app_module.create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "codex.sessions.shell",
+                "params": {"session_id": "s-1", "request": {"command": "pwd"}},
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"]["code"] == -32601
+    assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
+    assert payload["error"]["data"]["method"] == "codex.sessions.shell"
+    assert "codex.sessions.shell" not in payload["error"]["data"]["supported_methods"]
 
 
 @pytest.mark.asyncio
