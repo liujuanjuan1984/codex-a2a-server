@@ -281,15 +281,13 @@ described first in [README.md](../README.md) and above in this guide.
   to `TaskStatusUpdateEvent(final=false, state=working)` with
   `metadata.shared.interrupt.phase=resolved` and
   `metadata.shared.interrupt.resolution=replied|rejected`. Duplicate or unknown
-  resolved events are suppressed by `request_id`. Provider-private raw
-  interrupt payload is preserved under `metadata.codex.interrupt`.
-  For Codex app-server approval and `tool/requestUserInput` requests, shared
-  interrupt details are derived only from protocol-defined fields in the
-  vendored Codex schema: approval `reason` maps to shared
-  `details.display_message`, and `questions` is forwarded for
-  `tool/requestUserInput`. Undocumented or provider-private fields remain under
-  `metadata.codex.interrupt.metadata.raw` and are not promoted into shared
-  interrupt metadata.
+  resolved events are suppressed by `request_id`. For Codex app-server approval
+  and `tool/requestUserInput` requests, user-visible approval/question details
+  are normalized into `metadata.shared.interrupt.details`, including readable
+  `display_message`, resolved `patterns`, and `questions` when available.
+  Interrupt status events no longer mirror the asked payload under
+  `metadata.codex.interrupt`; downstream consumers should treat
+  `metadata.shared.interrupt` as the single interrupt rendering contract.
   Non-streaming requests return a `Task` directly.
 - `tool_call` payload contract:
 

@@ -566,12 +566,7 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     assert interrupt["phase"] == "asked"
     assert "resolution" not in interrupt
     assert "/data/project/.env.secret" in interrupt["details"]["patterns"]
-    assert "metadata" not in interrupt["details"]
-    assert "tool" not in interrupt["details"]
-    assert (
-        interrupt_statuses[0].metadata["codex"]["interrupt"]["metadata"]["path"]
-        == "/data/project/.env.secret"
-    )
+    assert "codex" not in (interrupt_statuses[0].metadata or {})
     assert interrupt_statuses[0].status.state == TaskState.input_required
 
 
@@ -621,10 +616,10 @@ async def test_streaming_emits_interrupt_status_for_protocol_question_details() 
     assert interrupt["details"]["questions"] == [
         {"id": "q1", "question": "Proceed with deployment?"}
     ]
-    assert "display_message" not in interrupt["details"]
-    assert question_interrupts[0].metadata["codex"]["interrupt"]["metadata"]["method"] == (
-        "item/tool/requestUserInput"
+    assert (
+        interrupt["details"]["display_message"] == "Please confirm how the agent should continue."
     )
+    assert "codex" not in (question_interrupts[0].metadata or {})
     assert question_interrupts[0].status.state == TaskState.input_required
 
 

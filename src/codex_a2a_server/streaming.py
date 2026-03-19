@@ -259,7 +259,6 @@ async def consume_codex_stream(
         details: Mapping[str, Any],
         phase: str,
         resolution: str | None = None,
-        codex_private: Mapping[str, Any] | None = None,
     ) -> None:
         await flush_buffered_text_chunk()
         sequence = stream_state.next_sequence()
@@ -286,7 +285,6 @@ async def consume_codex_stream(
                         "sequence": sequence,
                     },
                     interrupt=interrupt_payload,
-                    codex_private=({"interrupt": dict(codex_private)} if codex_private else None),
                 ),
             )
         )
@@ -378,7 +376,6 @@ async def consume_codex_stream(
                                     interrupt_type=asked["interrupt_type"],
                                     details=asked["details"],
                                     phase="asked",
-                                    codex_private=asked.get("codex_private"),
                                 )
                         resolved = extract_interrupt_resolved_event(event)
                         if resolved is not None:

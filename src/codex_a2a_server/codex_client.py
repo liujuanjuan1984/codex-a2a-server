@@ -8,14 +8,13 @@ import os
 import shlex
 import shutil
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import __version__
 from .config import Settings
 from .logging_context import bind_correlation_id, get_correlation_id, install_log_record_factory
-from .stream_interrupts import extract_interrupt_questions
 from .tool_call_payloads import (
     as_tool_call_payload,
     tool_call_output_delta_payload_from_notification,
@@ -49,6 +48,73 @@ def _first_string(payload: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
+def _mapping_value(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def _first_nested_string(payload: Mapping[str, Any], *paths: tuple[str, ...]) -> str | None:
+    for path in paths:
+        current: Any = payload
+        for key in path:
+            if not isinstance(current, Mapping):
+                break
+            current = current.get(key)
+        else:
+            value = _normalized_string(current)
+            if value is not None:
+                return value
+    return None
+
+
+def _extract_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    values: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        normalized = _normalized_string(item)
+        if normalized is None or normalized in seen:
+            continue
+        seen.add(normalized)
+        values.append(normalized)
+    return values
+
+
+def _extract_permission_patterns(params: dict[str, Any]) -> list[str]:
+    patterns = _extract_string_list(params.get("patterns"))
+    if patterns:
+        return patterns
+
+    parsed_cmd = params.get("parsedCmd")
+    if not isinstance(parsed_cmd, list):
+        return []
+
+    resolved_patterns: list[str] = []
+    seen: set[str] = set()
+    for entry in parsed_cmd:
+        if not isinstance(entry, Mapping):
+            continue
+        path = _normalized_string(entry.get("path"))
+        if path is None or path in seen:
+            continue
+        seen.add(path)
+        resolved_patterns.append(path)
+    return resolved_patterns
+
+
+def _extract_question_properties_questions(params: dict[str, Any]) -> list[Any]:
+    questions = params.get("questions")
+    if isinstance(questions, list):
+        return questions
+
+    context = _mapping_value(params.get("context"))
+    if context is not None and isinstance(context.get("questions"), list):
+        return context["questions"]
+    return []
+
+
 def _build_codex_permission_interrupt_properties(
     *, request_key: str, session_id: str, method: str, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -57,22 +123,42 @@ def _build_codex_permission_interrupt_properties(
         "sessionID": session_id,
         "metadata": {"method": method, "raw": params},
     }
-    # Only map protocol-defined approval text into shared interrupt details.
-    display_message = _first_string(params, "reason")
+    display_message = _first_nested_string(
+        params,
+        ("request", "description"),
+        ("description",),
+        ("reason",),
+        ("request", "reason"),
+    )
     if display_message is not None:
         properties["display_message"] = display_message
+    patterns = _extract_permission_patterns(params)
+    if patterns:
+        properties["patterns"] = patterns
+    always = _extract_string_list(params.get("always"))
+    if always:
+        properties["always"] = always
     return properties
 
 
 def _build_codex_question_interrupt_properties(
     *, request_key: str, session_id: str, method: str, params: dict[str, Any]
 ) -> dict[str, Any]:
-    return {
+    properties = {
         "id": request_key,
         "sessionID": session_id,
-        "questions": extract_interrupt_questions(params),
+        "questions": _extract_question_properties_questions(params),
         "metadata": {"method": method, "raw": params},
     }
+    display_message = _first_nested_string(
+        params,
+        ("description",),
+        ("context", "description"),
+        ("prompt",),
+    )
+    if display_message is not None:
+        properties["display_message"] = display_message
+    return properties
 
 
 def _extract_tool_status(payload: dict[str, Any]) -> str | None:

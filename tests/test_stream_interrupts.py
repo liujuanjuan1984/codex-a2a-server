@@ -19,7 +19,6 @@ def test_extract_permission_interrupt_keeps_explicit_display_message_only() -> N
             "always": [],
             "display_message": "Agent wants to read the environment file.",
         },
-        "codex_private": {},
     }
 
 
@@ -40,16 +39,20 @@ def test_extract_question_interrupt_keeps_explicit_display_message_only() -> Non
             "questions": [{"id": "q1", "question": "Proceed with deployment?"}],
             "display_message": "Please confirm how the agent should continue.",
         },
-        "codex_private": {},
     }
 
 
-def test_extract_permission_interrupt_does_not_guess_display_message_from_reason() -> None:
+def test_extract_permission_interrupt_promotes_reason_and_parsed_paths() -> None:
     event = {
         "type": "permission.asked",
         "properties": {
             "id": "perm-2",
-            "reason": "The command needs confirmation.",
+            "metadata": {
+                "raw": {
+                    "reason": "The command needs confirmation.",
+                    "parsedCmd": [{"path": "/repo/.env"}],
+                }
+            },
         },
     }
 
@@ -58,14 +61,14 @@ def test_extract_permission_interrupt_does_not_guess_display_message_from_reason
         "interrupt_type": "permission",
         "details": {
             "permission": None,
-            "patterns": [],
+            "patterns": ["/repo/.env"],
             "always": [],
+            "display_message": "The command needs confirmation.",
         },
-        "codex_private": {},
     }
 
 
-def test_extract_question_interrupt_does_not_guess_nested_questions() -> None:
+def test_extract_question_interrupt_promotes_nested_questions() -> None:
     event = {
         "type": "question.asked",
         "properties": {
@@ -78,6 +81,5 @@ def test_extract_question_interrupt_does_not_guess_nested_questions() -> None:
     assert extract_interrupt_asked_event(event) == {
         "request_id": "q-2",
         "interrupt_type": "question",
-        "details": {"questions": []},
-        "codex_private": {"metadata": {"method": "item/tool/requestUserInput"}},
+        "details": {"questions": [{"id": "q1", "question": "Proceed with deployment?"}]},
     }

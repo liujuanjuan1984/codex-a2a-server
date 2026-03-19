@@ -690,7 +690,7 @@ async def test_unsupported_server_request_returns_jsonrpc_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_permission_request_emits_reason_as_display_message_only() -> None:
+async def test_permission_request_emits_shared_message_and_patterns() -> None:
     client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
@@ -721,8 +721,8 @@ async def test_permission_request_emits_reason_as_display_message_only() -> None
     assert props["id"] == "301"
     assert props["sessionID"] == "thr-1"
     assert props["display_message"] == "The command needs confirmation before continuing."
+    assert props["patterns"] == ["/repo/.env"]
     assert "permission" not in props
-    assert "patterns" not in props
     assert "always" not in props
     assert "reason" not in props
     assert props["metadata"]["raw"]["parsedCmd"] == [
@@ -731,7 +731,7 @@ async def test_permission_request_emits_reason_as_display_message_only() -> None
 
 
 @pytest.mark.asyncio
-async def test_question_request_emits_protocol_questions_only() -> None:
+async def test_question_request_emits_shared_questions_and_display_message() -> None:
     client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
@@ -764,7 +764,7 @@ async def test_question_request_emits_protocol_questions_only() -> None:
     assert len(events) == 1
     props = events[0]["properties"]
     assert props["id"] == "302"
-    assert "display_message" not in props
+    assert props["display_message"] == "Please confirm how the agent should continue."
     assert "description" not in props
     assert "prompt" not in props
     assert props["questions"] == [
@@ -774,7 +774,7 @@ async def test_question_request_emits_protocol_questions_only() -> None:
 
 
 @pytest.mark.asyncio
-async def test_permission_request_ignores_non_protocol_text_fields() -> None:
+async def test_permission_request_promotes_nested_request_message() -> None:
     client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
@@ -805,7 +805,8 @@ async def test_permission_request_ignores_non_protocol_text_fields() -> None:
 
     assert len(events) == 1
     props = events[0]["properties"]
-    assert "display_message" not in props
+    assert props["display_message"] == "Agent wants to read the environment file."
+    assert props["patterns"] == ["/repo/.env"]
     assert "request" not in props
     assert props["metadata"]["raw"]["request"] == {
         "description": "Agent wants to read the environment file.",
@@ -814,7 +815,7 @@ async def test_permission_request_ignores_non_protocol_text_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_question_request_ignores_nested_question_fallbacks() -> None:
+async def test_question_request_promotes_nested_context_details() -> None:
     client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
     events: list[dict] = []
 
@@ -841,8 +842,8 @@ async def test_question_request_ignores_nested_question_fallbacks() -> None:
 
     assert len(events) == 1
     props = events[0]["properties"]
-    assert "display_message" not in props
-    assert props["questions"] == []
+    assert props["display_message"] == "Please confirm how the agent should continue."
+    assert props["questions"] == [{"id": "q1", "question": "Proceed with deployment?"}]
     assert props["metadata"]["method"] == "item/tool/requestUserInput"
     assert props["metadata"]["raw"]["context"]["description"] == (
         "Please confirm how the agent should continue."

@@ -14,32 +14,116 @@ def _normalized_string(value: Any) -> str | None:
     return normalized or None
 
 
+def _mapping_value(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def _nested_value(root: Mapping[str, Any], *path: str) -> Any:
+    current: Any = root
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _first_nested_string(root: Mapping[str, Any], *paths: tuple[str, ...]) -> str | None:
+    for path in paths:
+        value = _normalized_string(_nested_value(root, *path))
+        if value is not None:
+            return value
+    return None
+
+
 def extract_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     result: list[str] = []
+    seen: set[str] = set()
     for item in value:
         if not isinstance(item, str):
             continue
         normalized = item.strip()
-        if normalized:
+        if normalized and normalized not in seen:
+            seen.add(normalized)
             result.append(normalized)
     return result
 
 
 def extract_interrupt_text_details(props: Mapping[str, Any]) -> dict[str, Any]:
     details: dict[str, Any] = {}
-    display_message = _normalized_string(props.get("display_message"))
+    display_message = _first_nested_string(
+        props,
+        ("display_message",),
+        ("description",),
+        ("request", "description"),
+        ("context", "description"),
+        ("reason",),
+        ("request", "reason"),
+        ("metadata", "raw", "description"),
+        ("metadata", "raw", "request", "description"),
+        ("metadata", "raw", "context", "description"),
+        ("metadata", "raw", "prompt"),
+        ("metadata", "raw", "reason"),
+        ("metadata", "raw", "request", "reason"),
+    )
     if display_message is not None:
         details["display_message"] = display_message
     return details
 
 
 def extract_interrupt_questions(props: Mapping[str, Any]) -> list[Any]:
-    questions = props.get("questions")
+    questions = _nested_value(props, "questions")
     if isinstance(questions, list):
         return questions
+    nested_questions = _nested_value(props, "context", "questions")
+    if isinstance(nested_questions, list):
+        return nested_questions
+    raw_questions = _nested_value(props, "metadata", "raw", "questions")
+    if isinstance(raw_questions, list):
+        return raw_questions
+    raw_nested_questions = _nested_value(props, "metadata", "raw", "context", "questions")
+    if isinstance(raw_nested_questions, list):
+        return raw_nested_questions
     return []
+
+
+def extract_interrupt_patterns(props: Mapping[str, Any]) -> list[str]:
+    patterns = extract_string_list(_nested_value(props, "patterns"))
+    if patterns:
+        return patterns
+
+    raw_patterns = extract_string_list(_nested_value(props, "metadata", "raw", "patterns"))
+    if raw_patterns:
+        return raw_patterns
+
+    fallback_path = _first_nested_string(
+        props,
+        ("metadata", "path"),
+        ("path",),
+        ("metadata", "raw", "path"),
+    )
+    if fallback_path is not None:
+        return [fallback_path]
+
+    parsed_cmd = _nested_value(props, "metadata", "raw", "parsedCmd")
+    if not isinstance(parsed_cmd, list):
+        return []
+
+    resolved_patterns: list[str] = []
+    seen: set[str] = set()
+    for entry in parsed_cmd:
+        mapping = _mapping_value(entry)
+        if mapping is None:
+            continue
+        path = _normalized_string(mapping.get("path"))
+        if path is None or path in seen:
+            continue
+        seen.add(path)
+        resolved_patterns.append(path)
+    return resolved_patterns
 
 
 def diagnose_interrupt_event(event: Mapping[str, Any]) -> str | None:
@@ -82,38 +166,27 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
         return None
     if event_type == "permission.asked":
         details: dict[str, Any] = {
-            "permission": props.get("permission"),
-            "patterns": extract_string_list(props.get("patterns")),
-            "always": extract_string_list(props.get("always")),
+            "permission": _first_nested_string(
+                props,
+                ("permission",),
+                ("metadata", "raw", "permission"),
+            ),
+            "patterns": extract_interrupt_patterns(props),
+            "always": extract_string_list(_nested_value(props, "always"))
+            or extract_string_list(_nested_value(props, "metadata", "raw", "always")),
         }
         details.update(extract_interrupt_text_details(props))
-        codex_private: dict[str, Any] = {}
-        metadata = props.get("metadata")
-        if isinstance(metadata, Mapping):
-            codex_private["metadata"] = dict(metadata)
-        tool = props.get("tool")
-        if isinstance(tool, Mapping):
-            codex_private["tool"] = dict(tool)
         return {
             "request_id": normalized_request_id,
             "interrupt_type": "permission",
             "details": details,
-            "codex_private": codex_private,
         }
     details = {"questions": extract_interrupt_questions(props)}
     details.update(extract_interrupt_text_details(props))
-    question_private: dict[str, Any] = {}
-    metadata = props.get("metadata")
-    if isinstance(metadata, Mapping):
-        question_private["metadata"] = dict(metadata)
-    tool = props.get("tool")
-    if isinstance(tool, Mapping):
-        question_private["tool"] = dict(tool)
     return {
         "request_id": normalized_request_id,
         "interrupt_type": "question",
         "details": details,
-        "codex_private": question_private,
     }
 
 
