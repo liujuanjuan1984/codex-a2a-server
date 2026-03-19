@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import secrets
@@ -127,7 +128,15 @@ def _build_sse_streaming_route(
             ping=float(sse_ping_seconds),
         )
 
-    route.__annotations__["request"] = Request
+    route.__signature__ = inspect.Signature(
+        parameters=[
+            inspect.Parameter(
+                "request",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=Request,
+            )
+        ]
+    )
     return route
 
 
