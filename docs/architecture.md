@@ -97,7 +97,14 @@ stronger isolation is added.
 
 Use the docs by responsibility:
 
-- [README](../README.md): project overview, value, vision, progress, and entry
+- [README](../README.md): project overview, quick-start path, and entry
   navigation
-- [Usage Guide](guide.md): configuration and protocol details
+- [Usage Guide](guide.md): configuration, protocol behavior, and runtime
+  examples
+- [Compatibility Guide](compatibility.md): current compatibility promises and
+  stability expectations
+- [Contributing Guide](../CONTRIBUTING.md): contributor workflow and validation
 - [Security Policy](../SECURITY.md): threat model and disclosure guidance
+- [Vendored Codex References](../vendor/codex/SYNC.md): upstream reference
+  snapshots used for comparison; they do not override this repository's
+  runtime behavior, tests, or machine-readable declarations

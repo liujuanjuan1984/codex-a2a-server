@@ -23,6 +23,38 @@ Client-only concerns should usually stay out of this repository.
 4. Keep PRs focused and describe contract or compatibility implications
    explicitly.
 
+## Development From Source
+
+Use the repository checkout directly only for development, local debugging, or
+validation against unreleased changes on `main`.
+
+1. Install dependencies:
+
+```bash
+uv sync --all-extras
+```
+
+2. Make sure local Codex is already usable:
+
+- verify `codex` is installed and available on `PATH` (or set `CODEX_CLI_BIN`)
+- verify Codex provider/auth configuration already works outside this repository
+
+3. Generate a local bearer token:
+
+```bash
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+```
+
+4. Start this service from the source tree:
+
+```bash
+CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server
+```
+
+5. Open the Agent Card:
+
+- `http://127.0.0.1:8000/.well-known/agent-card.json`
+
 ## Validation Baseline
 
 Run the default validation baseline before opening or updating a PR:
@@ -32,11 +64,10 @@ uv run pre-commit run --all-files
 uv run pytest
 ```
 
-For deployment or shell script changes, also run:
+For shell script changes, validate the touched scripts directly, for example:
 
 ```bash
-bash -n scripts/deploy.sh
-bash -n scripts/deploy/setup_instance.sh
+bash -n scripts/smoke_test_built_cli.sh
 ```
 
 If `pre-commit` rewrites files, review the rewritten output and re-run the

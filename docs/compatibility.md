@@ -26,6 +26,19 @@ Machine-readable discovery surfaces must reflect actual runtime behavior:
 If runtime support is not implemented, do not expose it as a supported machine-
 readable capability.
 
+## Normative Sources
+
+When documentation or reference material disagrees, treat these as normative in
+this order:
+
+- runtime behavior validated by tests
+- machine-readable discovery output such as Agent Card and OpenAPI metadata
+- repository-owned docs in `README.md`, `docs/`, and `CONTRIBUTING.md`
+
+Vendored upstream snapshots under `vendor/codex/` are reference inputs for
+comparison and protocol context. They do not override this repository's
+declared service contract.
+
 ## Stable Surface
 
 The current major line treats these areas as stable service-facing contracts:

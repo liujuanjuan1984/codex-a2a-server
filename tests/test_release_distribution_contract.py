@@ -2,6 +2,7 @@ from pathlib import Path
 
 PYPROJECT_TEXT = Path("pyproject.toml").read_text()
 README_TEXT = Path("README.md").read_text()
+CONTRIBUTING_TEXT = Path("CONTRIBUTING.md").read_text()
 SECURITY_TEXT = Path("SECURITY.md").read_text()
 SCRIPTS_README_TEXT = Path("scripts/README.md").read_text()
 PUBLISH_WORKFLOW_TEXT = Path(".github/workflows/publish.yml").read_text()
@@ -13,7 +14,13 @@ def test_readme_documents_released_cli_installation_via_uv_tool() -> None:
     assert "uv tool install codex-a2a-server" in README_TEXT
     assert "uv tool upgrade codex-a2a-server" in README_TEXT
     assert 'uv tool install "codex-a2a-server==<version>"' in README_TEXT
-    assert "Install Released CLI" in README_TEXT
+    assert "Self-start the released CLI against a workspace root:" in README_TEXT
+    assert "## Development From Source" not in README_TEXT
+    assert "## Development From Source" in CONTRIBUTING_TEXT
+    assert (
+        "CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server" in CONTRIBUTING_TEXT
+    )
+    assert "http://127.0.0.1:8000/.well-known/agent-card.json" in CONTRIBUTING_TEXT
     assert "Install and verify the local `codex` CLI itself." in README_TEXT
     assert "does not provision Codex providers, login state, or API keys for you" in README_TEXT
     assert "Startup fails fast if the local `codex` runtime is missing" in README_TEXT

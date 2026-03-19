@@ -88,8 +88,9 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
         }
         details.update(extract_interrupt_text_details(props))
         codex_private: dict[str, Any] = {}
-        if isinstance(props.get("metadata"), Mapping):
-            codex_private["metadata"] = dict(props.get("metadata"))
+        metadata = props.get("metadata")
+        if isinstance(metadata, Mapping):
+            codex_private["metadata"] = dict(metadata)
         tool = props.get("tool")
         if isinstance(tool, Mapping):
             codex_private["tool"] = dict(tool)
@@ -101,17 +102,18 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
         }
     details = {"questions": extract_interrupt_questions(props)}
     details.update(extract_interrupt_text_details(props))
-    codex_private = {}
-    if isinstance(props.get("metadata"), Mapping):
-        codex_private["metadata"] = dict(props.get("metadata"))
+    question_private: dict[str, Any] = {}
+    metadata = props.get("metadata")
+    if isinstance(metadata, Mapping):
+        question_private["metadata"] = dict(metadata)
     tool = props.get("tool")
     if isinstance(tool, Mapping):
-        codex_private["tool"] = dict(tool)
+        question_private["tool"] = dict(tool)
     return {
         "request_id": normalized_request_id,
         "interrupt_type": "question",
         "details": details,
-        "codex_private": codex_private,
+        "codex_private": question_private,
     }
 
 

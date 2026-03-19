@@ -1,131 +1,46 @@
 # codex-a2a-server
 
-> Turn Codex into a stateful, production-oriented A2A agent service.
+> Expose Codex through A2A.
 
-`codex-a2a-server` exposes Codex through standard A2A interfaces and adds the
-operational pieces that raw agent runtimes usually do not provide by default:
-authentication, session continuity, streaming contracts, interrupt handling,
-and documentation for running it as a service.
+`codex-a2a-server` adds an A2A service layer to the local Codex runtime, with
+auth, streaming, session continuity, interrupt handling, and a clear
+deployment boundary.
 
-## Why This Project Exists
+## What This Is
 
-Most coding agents are built first as interactive tools, not as reusable
-service endpoints. This project turns Codex into an agent service that can be
-embedded into applications, gateways, and orchestration systems without
-forcing each consumer to re-implement transport bridging, auth, or runtime
-operations.
-
-In practice, `codex-a2a-server` acts as:
-
-- a protocol bridge from A2A to Codex
-- a security boundary around the Codex runtime
-- a stable contract layer for session, streaming, and interrupt behaviors
-
-## Vision
-
-Build a reusable adapter layer that lets coding agents behave like service
-infrastructure rather than local-only tools:
-
-- standard transport contracts instead of provider-specific glue
-- explicit runtime boundaries instead of ad-hoc shell wrappers
-- production-friendly runtime behavior and observability instead of demo-only setups
-
-## What It Already Provides
-
-- A2A HTTP+JSON and JSON-RPC entrypoints for Codex
-- SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
-- session continuation and session query extensions
-- interrupt lifecycle mapping and callback validation
-- bearer-token auth, payload logging controls, and secret-handling guardrails
-- released-CLI startup and source-based runtime paths
-
-## Logical Components
+- An A2A adapter service for the local Codex runtime.
+- Use it when you need a stable A2A endpoint for apps, gateways, or A2A
+  clients.
 
 ```mermaid
 flowchart TD
-    A["A2A client"] --> B["FastAPI transport layer"]
-    B --> C["A2A task/message mapping"]
-    C --> D["Codex client adapter"]
-    D --> E["Codex app-server / CLI"]
+    Client["a2a-client-hub / any A2A client"]
 
-    B --> F["Auth and request logging"]
-    C --> G["Shared contract normalization"]
-    G --> H["Streaming blocks"]
-    G --> I["Session continuity"]
-    G --> J["Interrupt lifecycle"]
+    subgraph ServerSide["Server-side"]
+        Adapter["codex-a2a-server\nA2A adapter service"]
+        Runtime["Codex app-server / CLI runtime"]
+
+        Adapter <--> Runtime
+    end
+
+    Client <--> Adapter
 ```
 
-This repository does not change what Codex fundamentally is. It wraps Codex in
-a service layer that makes the runtime consumable through stable agent-facing
-contracts.
+## Quick Start
 
-More detail: [Architecture Guide](docs/architecture.md)
-
-## Current Progress
-
-The project already has a usable service baseline for internal or controlled
-runtime use:
-
-- core A2A send/stream flows are implemented
-- streaming contracts are normalized around shared metadata
-- interrupt ask/resolve lifecycle is surfaced explicitly
-- session continuity is available through shared metadata and JSON-RPC queries
-- released-CLI self-start and source-based runtime paths are both documented
-- security baseline now includes `SECURITY.md`, secret scanning, and safer
-  runtime defaults
-
-## Security Model
-
-This project improves the service boundary around Codex, but it is not a hard
-multi-tenant isolation layer.
-
-One running instance should be treated as a single-tenant trust boundary with
-a shared workspace/environment.
-
-- the underlying Codex runtime may still need provider credentials
-- one instance is not tenant-isolated by default
-- local runtime setup still needs a controlled environment
-
-Read before use:
-
-- [SECURITY.md](SECURITY.md)
-
-## Recommended Client Side
-
-If you want a client-side integration layer to consume this service, prefer
-[a2a-client-hub](https://github.com/liujuanjuan1984/a2a-client-hub).
-
-It is a better place for client concerns such as A2A consumption, upstream
-adapter normalization, and application-facing integration, while
-`codex-a2a-server` stays focused on the server/runtime boundary around Codex.
-
-## Install Released CLI
-
-Released versions are published to PyPI and mapped to Git tags / GitHub
-Releases. This is the recommended entry point for users.
-
-Release gate:
-
-- create a PR from the working branch
-- merge into `main` after human review
-- create a `v*` tag only from a commit already contained in `main`
-- let the tag trigger PyPI and GitHub Release publication
-
-This repository does not publish directly from an unmerged feature branch.
-
-Install the latest release:
+Install the released CLI with `uv tool`:
 
 ```bash
 uv tool install codex-a2a-server
 ```
 
-Upgrade an existing installation:
+Upgrade later with:
 
 ```bash
 uv tool upgrade codex-a2a-server
 ```
 
-Install an exact release:
+Install an exact release with:
 
 ```bash
 uv tool install "codex-a2a-server==<version>"
@@ -145,73 +60,93 @@ export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-CODEX_WORKSPACE_ROOT=/abs/path/to/workspace \
-codex-a2a-server
+CODEX_WORKSPACE_ROOT=/abs/path/to/workspace codex-a2a-server
 ```
 
-Default address: `http://127.0.0.1:8000`
+Agent Card: `http://127.0.0.1:8000/.well-known/agent-card.json`
 
-For a longer self-start example with model and timeout overrides, use the
+## What You Get
+
+- A2A HTTP+JSON and JSON-RPC entrypoints for Codex
+- SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
+- session continuation and session query extensions
+- interrupt lifecycle mapping and callback validation
+- bearer-token auth, payload logging controls, and secret-handling guardrails
+- released-CLI startup and source-based runtime paths
+
+Detailed protocol contracts, examples, and extension docs live in
 [Usage Guide](docs/guide.md).
 
-## Development From Source
+## When To Use It
 
-Use the repository checkout directly only for development, local debugging, or
-validation against unreleased changes on `main`.
+Use this project when:
 
-1. Install dependencies:
+- you want to keep Codex as the runtime
+- you need A2A transports and Agent Card discovery
+- you want a thin service boundary instead of building your own adapter
 
-```bash
-uv sync --all-extras
-```
+Look elsewhere if:
 
-2. Make sure local Codex is already usable:
+- you need hard multi-tenant isolation inside one shared runtime
+- you want this project to manage your process supervisor or host bootstrap
+- you want a general client integration layer rather than a server wrapper
 
-- verify `codex` is installed and available on `PATH` (or set `CODEX_CLI_BIN`)
-- verify Codex provider/auth configuration already works outside this repository
+## Recommended Client Side
 
-3. Generate a local bearer token:
+If you want a client-side integration layer to consume this service, prefer
+[a2a-client-hub](https://github.com/liujuanjuan1984/a2a-client-hub).
 
-```bash
-export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
-```
+It is a better place for client concerns such as A2A consumption, upstream
+adapter normalization, and application-facing integration, while
+`codex-a2a-server` stays focused on the server/runtime boundary around Codex.
 
-4. Start this service from the source tree:
+## Deployment Boundary
 
-```bash
-CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server
-```
+This repository improves the service boundary around Codex, but it does not
+turn Codex into a hardened multi-tenant platform.
 
-5. Open the Agent Card:
+- `A2A_BEARER_TOKEN` protects the A2A surface.
+- Provider auth and default model configuration remain on the Codex side.
+- One deployed instance should be treated as a single-tenant trust boundary.
+- For mutually untrusted tenants, run separate instances with isolated users,
+  workspaces, credentials, and ports.
 
-- `http://127.0.0.1:8000/.well-known/agent-card.json`
+Read before deployment:
 
-For configuration, transport examples, and protocol details, use the dedicated
-docs instead of the root README.
+- [SECURITY.md](SECURITY.md)
+- [Usage Guide](docs/guide.md)
 
-## Documentation Map
+## Release Model
 
-- [Architecture Guide](docs/architecture.md)
-  System structure, boundaries, and request flow.
+Released versions are published to PyPI and mapped to Git tags / GitHub
+Releases.
+
+- create a PR from the working branch
+- merge into `main` after human review
+- create a `v*` tag only from a commit already contained in `main`
+- let the tag trigger PyPI and GitHub Release publication
+
+This repository does not publish directly from an unmerged feature branch.
+
+## Further Reading
+
 - [Usage Guide](docs/guide.md)
   Configuration, API contracts, client examples, streaming/session/interrupt
   details.
+- [Architecture Guide](docs/architecture.md)
+  System structure, boundaries, and request flow.
 - [Compatibility Guide](docs/compatibility.md)
   Supported Python/runtime surface, extension stability, and ecosystem-facing
   compatibility expectations.
-- [Contributing Guide](CONTRIBUTING.md)
-  Contributor workflow, validation baseline, and change expectations.
 - [Security Policy](SECURITY.md)
   Threat model, deployment caveats, and vulnerability disclosure guidance.
 
 ## Development
 
-Baseline validation:
-
-```bash
-uv run pre-commit run --all-files
-uv run pytest
-```
+For contributor workflow, validation baseline, helper scripts, and upstream
+reference snapshots, see [Contributing Guide](CONTRIBUTING.md),
+[Scripts Reference](scripts/README.md), and
+[Vendored Codex References](vendor/codex/SYNC.md).
 
 ## License
 

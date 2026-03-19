@@ -4,6 +4,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from typing import Any
 from uuid import uuid4
 
 CORRELATION_ID_HEADER = "X-Request-Id"
@@ -52,7 +53,7 @@ def install_log_record_factory() -> None:
 
     current_factory = logging.getLogRecordFactory()
 
-    def _factory(*args, **kwargs):  # type: ignore[no-untyped-def]
+    def _factory(*args: Any, **kwargs: Any):
         record = current_factory(*args, **kwargs)
         if not hasattr(record, "correlation_id"):
             record.correlation_id = get_correlation_id() or _MISSING_CORRELATION_ID

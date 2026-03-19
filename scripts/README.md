@@ -4,6 +4,9 @@ Repository-maintainer scripts live here.
 
 This document only explains the remaining repository-local maintainer scripts.
 User-facing runtime entrypoints live in the released `codex-a2a-server` CLI.
+If you want the fastest install/start path for the service itself, use the
+`uv tool` flow in [README.md](../README.md) instead of anything in this
+directory.
 
 ## Start Here
 
@@ -18,11 +21,6 @@ User-facing runtime entrypoints live in the released `codex-a2a-server` CLI.
   healthy.
 - [`scripts/sync_codex_docs.sh`](./sync_codex_docs.sh):
   refresh vendored Codex documentation snapshots used by this repository.
-
-## Quick Links
-
-- [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh)
-- [`scripts/sync_codex_docs.sh`](./sync_codex_docs.sh)
 
 ## Notes
 

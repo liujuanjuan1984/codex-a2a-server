@@ -280,7 +280,4 @@ def _build_output_delta_payload(
 
 
 def as_tool_call_payload(payload: ToolCallPayload) -> dict[str, Any]:
-    return cast(
-        dict[str, Any],
-        payload.model_dump(mode="json", by_alias=False, exclude_none=True),
-    )
+    return payload.model_dump(mode="json", by_alias=False, exclude_none=True)

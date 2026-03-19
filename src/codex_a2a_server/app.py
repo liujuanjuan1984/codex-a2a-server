@@ -570,7 +570,15 @@ def create_app(settings: Settings) -> FastAPI:
 
         response = await call_next(request)
         if isinstance(response, StreamingResponse):
-            if sensitive_method:
+            status_code = getattr(response, "status_code", 200)
+            if request_omit_reason:
+                logger.debug(
+                    "A2A response %s status=%s body=[omitted request_%s]",
+                    path,
+                    status_code,
+                    request_omit_reason,
+                )
+            elif sensitive_method:
                 logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
             else:
                 logger.debug("A2A response %s streaming", path)
@@ -655,6 +663,14 @@ def create_app(settings: Settings) -> FastAPI:
         protocol_version=settings.a2a_protocol_version,
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
+
+    try:
+        from sse_starlette.sse import AppStatus
+    except ImportError:  # pragma: no cover - optional dependency
+        AppStatus = None
+    if AppStatus is not None:
+        AppStatus.should_exit = False
+        AppStatus.should_exit_event = None
 
     return app
 

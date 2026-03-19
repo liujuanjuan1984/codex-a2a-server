@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import __version__
 from .config import Settings
 from .logging_context import bind_correlation_id, get_correlation_id, install_log_record_factory
 from .stream_interrupts import extract_interrupt_questions
@@ -26,7 +27,6 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 _DEFAULT_CLIENT_NAME = "codex_a2a_server"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Server"
-_DEFAULT_CLIENT_VERSION = "0.1.0"
 _EVENT_QUEUE_MAXSIZE = 2048
 
 
@@ -450,7 +450,7 @@ class CodexClient:
                     "clientInfo": {
                         "name": _DEFAULT_CLIENT_NAME,
                         "title": _DEFAULT_CLIENT_TITLE,
-                        "version": _DEFAULT_CLIENT_VERSION,
+                        "version": __version__,
                     },
                     "capabilities": {
                         "experimentalApi": True,

@@ -1,11 +1,9 @@
 # Usage Guide
 
-This guide is the technical reference for day-to-day integration. It focuses on
-runtime configuration, transport contracts, streaming/session/interrupt
-behavior, and client examples.
-
-If you are looking for project value, architecture, or documentation entry
-navigation, start from [README.md](../README.md) instead.
+This guide covers runtime configuration, transport contracts,
+streaming/session/interrupt behavior, and client examples.
+It is the canonical document for implementation-level protocol contracts;
+[README.md](../README.md) stays at overview level.
 
 ## Transport Contracts
 
@@ -175,7 +173,9 @@ Codex prerequisite note:
 ## Released CLI Self-Start
 
 For a single user or an existing workspace root, prefer the published CLI
-instead of repository scripts.
+instead of repository scripts. The abbreviated quick-start stays in
+[README.md](../README.md); this section keeps the fuller runtime example and
+operational notes.
 
 Install once:
 
@@ -220,8 +220,8 @@ export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24
 CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server
 ```
 
-This path is for contributors. End users should prefer the released CLI or the
-released CLI self-start path.
+This path is for contributors. End users should prefer the released CLI path
+described first in [README.md](../README.md) and above in this guide.
 
 ## Service Behavior
 

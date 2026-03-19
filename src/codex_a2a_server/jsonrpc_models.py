@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from a2a._base import A2ABaseModel
@@ -85,7 +86,7 @@ def _normalize_session_query_limit(query: dict[str, Any]) -> dict[str, Any]:
     return query
 
 
-def _map_extra_forbidden(errors: list[dict[str, Any]]) -> JsonRpcParamsValidationError:
+def _map_extra_forbidden(errors: Sequence[Mapping[str, Any]]) -> JsonRpcParamsValidationError:
     fields = sorted({_format_loc(tuple(err.get("loc", ()))) for err in errors})
     if fields and all(field.startswith("request.") for field in fields):
         return JsonRpcParamsValidationError(
@@ -599,6 +600,7 @@ def parse_prompt_async_params(params: dict[str, Any]) -> PromptAsyncControlParam
         return PromptAsyncControlParams.model_validate(params)
     except ValidationError as exc:
         _raise_control_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 def parse_command_params(params: dict[str, Any]) -> CommandControlParams:
@@ -606,6 +608,7 @@ def parse_command_params(params: dict[str, Any]) -> CommandControlParams:
         return CommandControlParams.model_validate(params)
     except ValidationError as exc:
         _raise_control_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 def parse_shell_params(params: dict[str, Any]) -> ShellControlParams:
@@ -613,6 +616,7 @@ def parse_shell_params(params: dict[str, Any]) -> ShellControlParams:
         return ShellControlParams.model_validate(params)
     except ValidationError as exc:
         _raise_control_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 def parse_permission_reply_params(params: dict[str, Any]) -> PermissionReplyParams:
@@ -620,6 +624,7 @@ def parse_permission_reply_params(params: dict[str, Any]) -> PermissionReplyPara
         return PermissionReplyParams.model_validate(params)
     except ValidationError as exc:
         _raise_interrupt_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 def parse_question_reply_params(params: dict[str, Any]) -> QuestionReplyParams:
@@ -627,6 +632,7 @@ def parse_question_reply_params(params: dict[str, Any]) -> QuestionReplyParams:
         return QuestionReplyParams.model_validate(params)
     except ValidationError as exc:
         _raise_interrupt_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 def parse_question_reject_params(params: dict[str, Any]) -> QuestionRejectParams:
@@ -634,6 +640,7 @@ def parse_question_reject_params(params: dict[str, Any]) -> QuestionRejectParams
         return QuestionRejectParams.model_validate(params)
     except ValidationError as exc:
         _raise_interrupt_validation_error(exc)
+        raise AssertionError("unreachable") from exc
 
 
 __all__ = [

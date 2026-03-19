@@ -37,6 +37,9 @@ jobs:
       - name: Run pre-commit
         run: uv run pre-commit run --all-files
 
+      - name: Run mypy
+        run: uv run mypy --config-file mypy.ini
+
       - name: Run pytest
         run: uv run pytest
 
