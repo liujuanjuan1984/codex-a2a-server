@@ -112,7 +112,7 @@ It is a better place for client concerns such as A2A consumption, upstream
 adapter normalization, and application-facing integration, while
 `codex-a2a-server` stays focused on the server/runtime boundary around Codex.
 
-## Released CLI
+## Install Released CLI
 
 Install the latest release:
 
@@ -214,6 +214,11 @@ docs instead of the root README.
   compatibility expectations.
 - [Contributing Guide](CONTRIBUTING.md)
   Contributor workflow, validation baseline, and change expectations.
+- [Scripts Reference](scripts/README.md)
+  Remaining repository-maintainer scripts and when to use them.
+- [Vendored Codex References](vendor/codex/SYNC.md)
+  Upstream Codex snapshots kept for offline reference and schema comparison;
+  they are not the primary source of this repository's service guarantees.
 - [Security Policy](SECURITY.md)
   Threat model, deployment caveats, and vulnerability disclosure guidance.
 
