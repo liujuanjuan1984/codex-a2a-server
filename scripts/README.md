@@ -4,6 +4,9 @@ Repository-maintainer scripts live here.
 
 This document only explains the remaining repository-local maintainer scripts.
 User-facing runtime entrypoints live in the released `codex-a2a-server` CLI.
+If you want the fastest install/start path for the service itself, use the
+`uv tool` flow in [README.md](../README.md) instead of anything in this
+directory.
 
 ## Start Here
 

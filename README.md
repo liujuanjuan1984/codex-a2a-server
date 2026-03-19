@@ -7,6 +7,32 @@ operational pieces that raw agent runtimes usually do not provide by default:
 authentication, session continuity, streaming contracts, interrupt handling,
 and documentation for running it as a service.
 
+## Fast Start
+
+For most users, the published CLI is the default path. Install it with
+`uv tool`, point it at a workspace, and start the service directly:
+
+```bash
+uv tool install codex-a2a-server
+export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+CODEX_WORKSPACE_ROOT=/abs/path/to/workspace codex-a2a-server
+```
+
+Before starting:
+
+- install and verify the local `codex` CLI itself
+- make sure Codex provider/model/auth configuration already works outside this repository
+- expect startup to fail fast if the local `codex` runtime is missing or cannot initialize
+
+Contributors working on unreleased changes should use the source-tree path
+instead: `uv sync --all-extras` then `uv run codex-a2a-server`.
+
+Use the docs by task:
+
+- [Usage Guide](docs/guide.md) for configuration, API contracts, and full startup examples
+- [Architecture Guide](docs/architecture.md) for responsibilities and request flow
+- [Contributing Guide](CONTRIBUTING.md) for branch, validation, and review workflow
+
 ## Why This Project Exists
 
 Most coding agents are built first as interactive tools, not as reusable
@@ -61,19 +87,6 @@ contracts.
 
 More detail: [Architecture Guide](docs/architecture.md)
 
-## Current Progress
-
-The project already has a usable service baseline for internal or controlled
-runtime use:
-
-- core A2A send/stream flows are implemented
-- streaming contracts are normalized around shared metadata
-- interrupt ask/resolve lifecycle is surfaced explicitly
-- session continuity is available through shared metadata and JSON-RPC queries
-- released-CLI self-start and source-based runtime paths are both documented
-- security baseline now includes `SECURITY.md`, secret scanning, and safer
-  runtime defaults
-
 ## Security Model
 
 This project improves the service boundary around Codex, but it is not a hard
@@ -99,19 +112,7 @@ It is a better place for client concerns such as A2A consumption, upstream
 adapter normalization, and application-facing integration, while
 `codex-a2a-server` stays focused on the server/runtime boundary around Codex.
 
-## Install Released CLI
-
-Released versions are published to PyPI and mapped to Git tags / GitHub
-Releases. This is the recommended entry point for users.
-
-Release gate:
-
-- create a PR from the working branch
-- merge into `main` after human review
-- create a `v*` tag only from a commit already contained in `main`
-- let the tag trigger PyPI and GitHub Release publication
-
-This repository does not publish directly from an unmerged feature branch.
+## Released CLI
 
 Install the latest release:
 
@@ -153,6 +154,18 @@ Default address: `http://127.0.0.1:8000`
 
 For a longer self-start example with model and timeout overrides, use the
 [Usage Guide](docs/guide.md).
+
+## Release Model
+
+Released versions are published to PyPI and mapped to Git tags / GitHub
+Releases.
+
+- create a PR from the working branch
+- merge into `main` after human review
+- create a `v*` tag only from a commit already contained in `main`
+- let the tag trigger PyPI and GitHub Release publication
+
+This repository does not publish directly from an unmerged feature branch.
 
 ## Development From Source
 
