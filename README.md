@@ -7,6 +7,20 @@ operational pieces that raw agent runtimes usually do not provide by default:
 authentication, session continuity, streaming contracts, interrupt handling,
 and documentation for running it as a service.
 
+## Service Path
+
+```mermaid
+flowchart LR
+    Client["A2A client / app"] --> Server["codex-a2a-server"]
+    Server --> Contracts["auth + A2A contract mapping"]
+    Contracts --> Codex["Codex app-server / CLI runtime"]
+    Codex --> Workspace["workspace + provider credentials"]
+```
+
+The service sits between A2A consumers and the local Codex runtime. It keeps
+the network-facing contract stable without pretending to replace Codex's own
+runtime boundary.
+
 ## Fast Start
 
 For most users, the published CLI is the default path. Install it with
@@ -64,28 +78,6 @@ infrastructure rather than local-only tools:
 - interrupt lifecycle mapping and callback validation
 - bearer-token auth, payload logging controls, and secret-handling guardrails
 - released-CLI startup and source-based runtime paths
-
-## Logical Components
-
-```mermaid
-flowchart TD
-    A["A2A client"] --> B["FastAPI transport layer"]
-    B --> C["A2A task/message mapping"]
-    C --> D["Codex client adapter"]
-    D --> E["Codex app-server / CLI"]
-
-    B --> F["Auth and request logging"]
-    C --> G["Shared contract normalization"]
-    G --> H["Streaming blocks"]
-    G --> I["Session continuity"]
-    G --> J["Interrupt lifecycle"]
-```
-
-This repository does not change what Codex fundamentally is. It wraps Codex in
-a service layer that makes the runtime consumable through stable agent-facing
-contracts.
-
-More detail: [Architecture Guide](docs/architecture.md)
 
 ## Security Model
 
