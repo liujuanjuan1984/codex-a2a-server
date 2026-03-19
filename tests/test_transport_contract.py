@@ -8,7 +8,7 @@ import pytest
 from a2a.types import TransportProtocol
 from starlette.requests import Request
 
-from codex_a2a_server.app import CodexRESTAdapter, build_agent_card, create_app
+from codex_a2a_server.app import _build_sse_streaming_route, build_agent_card, create_app
 from tests.helpers import DummyChatCodexClient, make_settings
 
 
@@ -61,12 +61,9 @@ def test_create_app_resets_sse_app_status() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rest_adapter_uses_configured_sse_ping_interval() -> None:
-    adapter = CodexRESTAdapter(
-        agent_card=build_agent_card(make_settings(a2a_bearer_token="test-token")),
-        http_handler=MagicMock(),
-        sse_ping_seconds=7.5,
-    )
+async def test_streaming_route_uses_configured_sse_ping_interval() -> None:
+    context_builder = MagicMock()
+    context_builder.build.return_value = MagicMock()
 
     async def receive() -> dict:
         return {"type": "http.request", "body": b"{}", "more_body": False}
@@ -91,7 +88,12 @@ async def test_rest_adapter_uses_configured_sse_ping_interval() -> None:
         if False:
             yield {}
 
-    response = await adapter._handle_streaming_request(stream_method, request)
+    route = _build_sse_streaming_route(
+        method=stream_method,
+        context_builder=context_builder,
+        sse_ping_seconds=7.5,
+    )
+    response = await route(request)
 
     assert response.ping_interval == 7.5
 

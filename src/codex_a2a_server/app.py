@@ -5,7 +5,7 @@ import json
 import logging
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
@@ -99,33 +99,14 @@ class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
         return context
 
 
-class CodexRESTAdapter(RESTAdapter):
-    def __init__(
-        self,
-        *,
-        agent_card: AgentCard,
-        http_handler,
-        sse_ping_seconds: float,
-        extended_agent_card: AgentCard | None = None,
-        context_builder: DefaultCallContextBuilder | None = None,
-        card_modifier: Callable[[AgentCard], Awaitable[AgentCard] | AgentCard] | None = None,
-        extended_card_modifier: Callable[
-            [AgentCard, ServerCallContext], Awaitable[AgentCard] | AgentCard
-        ]
-        | None = None,
-    ) -> None:
-        super().__init__(
-            agent_card=agent_card,
-            http_handler=http_handler,
-            extended_agent_card=extended_agent_card,
-            context_builder=context_builder,
-            card_modifier=card_modifier,
-            extended_card_modifier=extended_card_modifier,
-        )
-        self._sse_ping_seconds = float(sse_ping_seconds)
-
+def _build_sse_streaming_route(
+    *,
+    method: Callable[[Request, ServerCallContext], AsyncIterable[object]],
+    context_builder: DefaultCallContextBuilder,
+    sse_ping_seconds: float,
+) -> Callable[[Request], Awaitable[EventSourceResponse]]:
     @rest_stream_error_handler
-    async def _handle_streaming_request(self, method, request):
+    async def route(request):
         try:
             await request.body()
         except (ValueError, RuntimeError, OSError) as e:
@@ -133,19 +114,21 @@ class CodexRESTAdapter(RESTAdapter):
                 error=InvalidRequestError(message=f"Failed to pre-consume request body: {e}")
             ) from e
 
-        call_context = self._context_builder.build(request)
+        call_context = context_builder.build(request)
 
-        async def event_generator(stream):
+        async def event_generator(
+            stream: AsyncIterable[object],
+        ) -> AsyncIterator[dict[str, object]]:
             async for item in stream:
                 yield {"data": item}
 
         return EventSourceResponse(
             event_generator(method(request, call_context)),
-            ping=self._sse_ping_seconds,
+            ping=float(sse_ping_seconds),
         )
 
-
-CodexRESTAdapter._handle_streaming_request.__annotations__["request"] = Request
+    route.__annotations__["request"] = Request
+    return route
 
 
 def _build_deployment_context(settings: Settings) -> dict[str, str | bool | int]:
@@ -458,13 +441,23 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.codex_client = client
     app.state.codex_executor = executor
 
-    rest_adapter = CodexRESTAdapter(
+    rest_adapter = RESTAdapter(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
+    )
+    rest_routes = rest_adapter.routes()
+    rest_routes[("/v1/message:stream", "POST")] = _build_sse_streaming_route(
+        method=rest_adapter.handler.on_message_send_stream,
+        context_builder=context_builder,
         sse_ping_seconds=settings.a2a_stream_sse_ping_seconds,
     )
-    for route, callback in rest_adapter.routes().items():
+    rest_routes[("/v1/tasks/{id}:subscribe", "GET")] = _build_sse_streaming_route(
+        method=rest_adapter.handler.on_resubscribe_to_task,
+        context_builder=context_builder,
+        sse_ping_seconds=settings.a2a_stream_sse_ping_seconds,
+    )
+    for route, callback in rest_routes.items():
         app.add_api_route(route[0], callback, methods=[route[1]])
 
     if settings.a2a_enable_health_endpoint:
