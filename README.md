@@ -153,6 +153,16 @@ For a managed long-running deployment, use the published-package systemd flow
 in the [Deployment Guide](docs/deployment.md). That path no longer relies on a
 source checkout or a repository-local virtualenv.
 
+Release-based deploy entrypoint:
+
+```bash
+GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
+codex-a2a-server deploy \
+  --project alpha \
+  --a2a-host 127.0.0.1 \
+  --a2a-port 8010
+```
+
 ## Development From Source
 
 Use the repository checkout directly only for development, local debugging, or

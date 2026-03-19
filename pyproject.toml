@@ -42,7 +42,7 @@ dev = [
 ]
 
 [project.scripts]
-codex-a2a-server = "codex_a2a_server.app:main"
+codex-a2a-server = "codex_a2a_server.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/liujuanjuan1984/codex-a2a-server"
@@ -61,6 +61,9 @@ quote-style = "double"
 
 [tool.uv]
 package = true
+
+[tool.setuptools.package-data]
+codex_a2a_server = ["assets/scripts/*", "assets/scripts/deploy/*"]
 
 [tool.setuptools_scm]
 fallback_version = "0.1.0"

@@ -87,7 +87,7 @@ Recommended secure workflow:
 1. Bootstrap directories and config templates.
 
 ```bash
-./scripts/deploy.sh project=alpha a2a_host=127.0.0.1 a2a_port=8010
+codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 ```
 
 2. Populate the generated root-only secret files.
@@ -102,7 +102,7 @@ sudoedit /data/codex-a2a/alpha/config/a2a.secret.env
 3. Re-run deploy to enable the service.
 
 ```bash
-./scripts/deploy.sh project=alpha a2a_host=127.0.0.1 a2a_port=8010
+codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 ```
 
 One-step deploy with secret persistence enabled:
@@ -111,18 +111,18 @@ One-step deploy with secret persistence enabled:
 read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh project=alpha a2a_host=127.0.0.1 a2a_port=8010
+codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 ```
 
 Public URL example:
 
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh \
-  project=alpha \
-  a2a_host=127.0.0.1 \
-  a2a_port=8010 \
-  a2a_public_url=https://a2a.example.com
+codex-a2a-server deploy \
+  --project alpha \
+  --a2a-host 127.0.0.1 \
+  --a2a-port 8010 \
+  --a2a-public-url https://a2a.example.com
 ```
 
 ## Runtime Secret Files
@@ -141,45 +141,48 @@ Templates are generated automatically as:
 - `a2a.secret.env.example`
 - `codex.secret.env.example`
 
-## Supported `deploy.sh` Inputs
+The released CLI uses flags as the preferred contract. For compatibility, the
+underlying packaged deploy helper still accepts legacy `key=value` passthrough.
+
+## Supported `codex-a2a-server deploy` Inputs
 
 Common CLI keys:
 
-- `project`
-- `data_root`
-- `a2a_host`
-- `a2a_port`
-- `a2a_public_url`
-- `a2a_enable_health_endpoint`
-- `a2a_enable_session_shell`
-- `a2a_interrupt_request_ttl_seconds`
-- `a2a_log_level`
-- `a2a_log_payloads`
-- `a2a_log_body_limit`
-- `codex_provider_id`
-- `codex_model_id`
-- `codex_timeout`
-- `codex_timeout_stream`
-- `package_spec`
-- `git_identity_name`
-- `git_identity_email`
-- `enable_secret_persistence`
-- `update_a2a`
-- `force_restart`
+- `--project`
+- `--data-root`
+- `--a2a-host`
+- `--a2a-port`
+- `--a2a-public-url`
+- `--a2a-enable-health-endpoint` / `--no-a2a-enable-health-endpoint`
+- `--a2a-enable-session-shell` / `--no-a2a-enable-session-shell`
+- `--a2a-interrupt-request-ttl-seconds`
+- `--a2a-log-level`
+- `--a2a-log-payloads` / `--no-a2a-log-payloads`
+- `--a2a-log-body-limit`
+- `--codex-provider-id`
+- `--codex-model-id`
+- `--codex-timeout`
+- `--codex-timeout-stream`
+- `--package-spec`
+- `--git-identity-name`
+- `--git-identity-email`
+- `--enable-secret-persistence` / `--no-enable-secret-persistence`
+- `--update-a2a` / `--no-update-a2a`
+- `--force-restart` / `--no-force-restart`
 
 Optional workspace bootstrap keys:
 
-- `repo_url`
-- `repo_branch`
+- `--repo-url`
+- `--repo-branch`
 
 Notes:
 
 - `repo_url` / `repo_branch` are only for optionally cloning a project
   repository into the instance workspace. They do not control how
   `codex-a2a-server` itself is installed or updated.
-- `package_spec` controls which published package spec is installed into the
+- `--package-spec` controls which published package spec is installed into the
   shared runtime when `update_a2a=true`.
-- runtime install precedence is `package_spec=<spec>` CLI override, then
+- runtime install precedence is `--package-spec <spec>` CLI override, then
   `CODEX_A2A_PACKAGE_SPEC`, then the default `codex-a2a-server`.
 
 ## Upgrade the Shared Runtime
@@ -187,17 +190,17 @@ Notes:
 To upgrade the shared managed runtime to the latest published version:
 
 ```bash
-./scripts/deploy.sh project=alpha update_a2a=true force_restart=true
+codex-a2a-server deploy --project alpha --update-a2a --force-restart
 ```
 
 To pin a specific release:
 
 ```bash
-./scripts/deploy.sh \
-  project=alpha \
-  package_spec='codex-a2a-server==0.1.0' \
-  update_a2a=true \
-  force_restart=true
+codex-a2a-server deploy \
+  --project alpha \
+  --package-spec 'codex-a2a-server==0.1.0' \
+  --update-a2a \
+  --force-restart
 ```
 
 This refreshes `/opt/codex-a2a/runtime` and restarts
