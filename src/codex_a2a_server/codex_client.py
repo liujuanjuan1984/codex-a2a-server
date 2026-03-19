@@ -780,9 +780,18 @@ class CodexClient:
                     "properties": {
                         "id": request_key,
                         "sessionID": session_id,
-                        "permission": "approval",
-                        "patterns": [],
-                        "always": [],
+                        "permission": _first_string(params, "permission") or "approval",
+                        "patterns": params.get("patterns") or [],
+                        "always": params.get("always") or [],
+                        "message": _first_string(
+                            params,
+                            "message",
+                            "description",
+                            "prompt",
+                            "reason",
+                            "display_message",
+                            "displayMessage",
+                        ),
                         "metadata": {"method": method, "raw": params},
                     },
                 }
@@ -809,6 +818,15 @@ class CodexClient:
                         "id": request_key,
                         "sessionID": session_id,
                         "questions": questions if isinstance(questions, list) else [],
+                        "message": _first_string(
+                            params,
+                            "message",
+                            "description",
+                            "prompt",
+                            "reason",
+                            "display_message",
+                            "displayMessage",
+                        ),
                     },
                 }
             )

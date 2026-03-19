@@ -39,6 +39,17 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
             "patterns": extract_string_list(props.get("patterns")),
             "always": extract_string_list(props.get("always")),
         }
+        for key in (
+            "message",
+            "description",
+            "reason",
+            "prompt",
+            "display_message",
+            "displayMessage",
+        ):
+            value = props.get(key)
+            if isinstance(value, str) and value.strip():
+                details[key] = value.strip()
         codex_private: dict[str, Any] = {}
         if isinstance(props.get("metadata"), Mapping):
             codex_private["metadata"] = dict(props.get("metadata"))
@@ -53,6 +64,10 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
         }
     questions = props.get("questions")
     details = {"questions": questions if isinstance(questions, list) else []}
+    for key in ("message", "description", "reason", "prompt", "display_message", "displayMessage"):
+        value = props.get(key)
+        if isinstance(value, str) and value.strip():
+            details[key] = value.strip()
     codex_private = {}
     tool = props.get("tool")
     if isinstance(tool, Mapping):
