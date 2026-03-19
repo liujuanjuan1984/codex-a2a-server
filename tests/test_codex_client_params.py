@@ -55,6 +55,45 @@ async def test_list_calls_use_expected_rpc_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_messages_applies_limit_locally_after_mapping() -> None:
+    client = CodexClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            codex_directory="/safe",
+            codex_timeout=1.0,
+        )
+    )
+
+    async def fake_rpc_request(method: str, params: dict | None = None):
+        assert method == "thread/read"
+        assert params == {"threadId": "thr-1", "includeTurns": True}
+        return {
+            "thread": {
+                "turns": [
+                    {
+                        "items": [
+                            {"type": "userMessage", "id": "m-1", "text": "first"},
+                            {"type": "agentMessage", "id": "m-2", "text": "second"},
+                        ]
+                    },
+                    {
+                        "items": [
+                            {"type": "userMessage", "id": "m-3", "text": "third"},
+                            {"type": "agentMessage", "id": "m-4", "text": "fourth"},
+                        ]
+                    },
+                ]
+            }
+        }
+
+    client._rpc_request = fake_rpc_request  # type: ignore[method-assign]
+
+    messages = await client.list_messages("thr-1", params={"limit": 2})
+
+    assert [message["info"]["id"] for message in messages] == ["m-3", "m-4"]
+
+
+@pytest.mark.asyncio
 async def test_session_shell_uses_command_exec_without_thread_context() -> None:
     client = CodexClient(
         make_settings(

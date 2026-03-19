@@ -12,6 +12,8 @@ from codex_a2a_server.app import (
     create_app,
 )
 from codex_a2a_server.extension_contracts import (
+    SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_MAX_LIMIT,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
@@ -47,6 +49,9 @@ def test_session_query_extension_ssot_matches_agent_card_contract() -> None:
     assert session_query.params == expected, (
         "Session query extension drifted from extension_contracts SSOT."
     )
+    assert session_query.params["pagination"]["default_limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert session_query.params["pagination"]["max_limit"] == SESSION_QUERY_MAX_LIMIT
+    assert session_query.params["pagination"]["behavior"] == "mixed"
 
 
 def test_session_query_extension_ssot_matches_agent_card_contract_when_shell_disabled() -> None:
@@ -67,6 +72,9 @@ def test_session_query_extension_ssot_matches_agent_card_contract_when_shell_dis
     assert session_query.params == expected, (
         "Disabled shell session query contract drifted from extension_contracts SSOT."
     )
+    assert session_query.params["pagination"]["default_limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert session_query.params["pagination"]["max_limit"] == SESSION_QUERY_MAX_LIMIT
+    assert session_query.params["pagination"]["behavior"] == "mixed"
 
 
 @pytest.mark.asyncio
@@ -255,3 +263,14 @@ def test_openapi_jsonrpc_examples_hide_shell_when_shell_disabled() -> None:
 
     assert "codex.sessions.shell" not in methods
     assert "codex.sessions.shell" not in session_contracts
+
+
+def test_openapi_jsonrpc_examples_use_declared_default_session_limit() -> None:
+    settings = make_settings(a2a_bearer_token="test-token")
+    openapi = create_app(settings).openapi()
+    examples = openapi["paths"]["/"]["post"]["requestBody"]["content"]["application/json"][
+        "examples"
+    ]
+
+    assert examples["session_list"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert examples["session_messages"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT

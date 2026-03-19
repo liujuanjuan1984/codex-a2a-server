@@ -1,5 +1,9 @@
 import pytest
 
+from codex_a2a_server.extension_contracts import (
+    SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_MAX_LIMIT,
+)
 from codex_a2a_server.jsonrpc_models import (
     JsonRpcParamsValidationError,
     parse_get_session_messages_params,
@@ -93,6 +97,20 @@ def test_parse_list_sessions_params_rejects_non_integer_limit() -> None:
     assert "fields" not in exc_info.value.data
 
 
+def test_parse_list_sessions_params_applies_default_limit() -> None:
+    query = parse_list_sessions_params({})
+
+    assert query == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
+
+
+def test_parse_list_sessions_params_rejects_limit_above_max() -> None:
+    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
+        parse_list_sessions_params({"limit": SESSION_QUERY_MAX_LIMIT + 1})
+
+    assert str(exc_info.value) == f"limit must be <= {SESSION_QUERY_MAX_LIMIT}"
+    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
+
+
 def test_parse_get_session_messages_params_returns_session_and_query() -> None:
     session_id, query = parse_get_session_messages_params(
         {
@@ -104,6 +122,13 @@ def test_parse_get_session_messages_params_returns_session_and_query() -> None:
 
     assert session_id == "s-1"
     assert query == {"tag": "ops", "limit": 3}
+
+
+def test_parse_get_session_messages_params_applies_default_limit() -> None:
+    session_id, query = parse_get_session_messages_params({"session_id": "s-1"})
+
+    assert session_id == "s-1"
+    assert query == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
 
 
 def test_parse_prompt_async_params_only_uses_fields_for_unsupported_fields() -> None:

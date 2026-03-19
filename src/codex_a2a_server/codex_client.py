@@ -851,7 +851,11 @@ class CodexClient:
         return sessions
 
     async def list_messages(self, session_id: str, *, params: dict[str, Any] | None = None) -> Any:
-        del params
+        query = self._merge_params(params)
+        limit: int | None = None
+        if "limit" in query:
+            with contextlib.suppress(ValueError):
+                limit = int(query["limit"])
         result = await self._rpc_request(
             "thread/read",
             {"threadId": session_id, "includeTurns": True},
@@ -893,6 +897,8 @@ class CodexClient:
                         "raw": item,
                     }
                 )
+        if limit is not None:
+            messages = messages[-limit:]
         return messages
 
     async def send_message(

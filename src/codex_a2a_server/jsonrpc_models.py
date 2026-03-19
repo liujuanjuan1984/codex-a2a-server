@@ -5,6 +5,8 @@ from typing import Any, Literal
 from a2a._base import A2ABaseModel
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
+from .extension_contracts import SESSION_QUERY_DEFAULT_LIMIT, SESSION_QUERY_MAX_LIMIT
+
 
 class JsonRpcParamsValidationError(ValueError):
     def __init__(self, *, message: str, data: dict[str, Any]) -> None:
@@ -64,6 +66,23 @@ def _format_loc(parts: tuple[Any, ...]) -> str:
             continue
         rendered.append(str(part))
     return ".".join(rendered)
+
+
+def _normalize_session_query_limit(query: dict[str, Any]) -> dict[str, Any]:
+    limit = query.get("limit")
+    if limit is None:
+        query["limit"] = SESSION_QUERY_DEFAULT_LIMIT
+        return query
+
+    normalized_limit = int(limit)
+    if normalized_limit > SESSION_QUERY_MAX_LIMIT:
+        raise JsonRpcParamsValidationError(
+            message=f"limit must be <= {SESSION_QUERY_MAX_LIMIT}",
+            data={"type": "INVALID_FIELD", "field": "limit"},
+        )
+
+    query["limit"] = normalized_limit
+    return query
 
 
 def _map_extra_forbidden(errors: list[dict[str, Any]]) -> JsonRpcParamsValidationError:
@@ -525,7 +544,7 @@ def parse_list_sessions_params(params: dict[str, Any]) -> dict[str, Any]:
         query.pop("size", None)
     if parsed.limit is not None:
         query["limit"] = parsed.limit
-    return query
+    return _normalize_session_query_limit(query)
 
 
 def parse_get_session_messages_params(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -572,7 +591,7 @@ def parse_get_session_messages_params(params: dict[str, Any]) -> tuple[str, dict
         query.pop("size", None)
     if parsed.limit is not None:
         query["limit"] = parsed.limit
-    return parsed.session_id, query
+    return parsed.session_id, _normalize_session_query_limit(query)
 
 
 def parse_prompt_async_params(params: dict[str, Any]) -> PromptAsyncControlParams:

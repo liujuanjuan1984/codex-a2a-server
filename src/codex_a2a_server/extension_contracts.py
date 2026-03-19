@@ -45,7 +45,9 @@ class InterruptMethodContract:
 
 
 SESSION_QUERY_PAGINATION_MODE = "limit"
-SESSION_QUERY_PAGINATION_BEHAVIOR = "passthrough"
+SESSION_QUERY_PAGINATION_BEHAVIOR = "mixed"
+SESSION_QUERY_DEFAULT_LIMIT = 20
+SESSION_QUERY_MAX_LIMIT = 100
 SESSION_QUERY_PAGINATION_PARAMS: tuple[str, ...] = ("limit",)
 SESSION_QUERY_PAGINATION_UNSUPPORTED: tuple[str, ...] = ("cursor", "page", "size")
 
@@ -515,6 +517,7 @@ def build_session_query_extension_params(
     method_contracts: dict[str, Any] = {}
     result_envelope_by_method: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
+    pagination_behavior_by_method: dict[str, str] = {}
 
     for method_contract in active_method_contracts.values():
         params_contract = _build_method_contract_params(
@@ -553,6 +556,10 @@ def build_session_query_extension_params(
 
         if method_contract.pagination_mode == SESSION_QUERY_PAGINATION_MODE:
             pagination_applies_to.append(method_contract.method)
+            if method_contract.method == SESSION_QUERY_METHODS["list_sessions"]:
+                pagination_behavior_by_method[method_contract.method] = "upstream_passthrough"
+            elif method_contract.method == SESSION_QUERY_METHODS["get_session_messages"]:
+                pagination_behavior_by_method[method_contract.method] = "local_tail_slice"
 
     return {
         "methods": active_query_methods,
@@ -564,9 +571,19 @@ def build_session_query_extension_params(
         "provider_private_metadata": ["codex.directory"],
         "pagination": {
             "mode": SESSION_QUERY_PAGINATION_MODE,
+            "default_limit": SESSION_QUERY_DEFAULT_LIMIT,
+            "max_limit": SESSION_QUERY_MAX_LIMIT,
             "behavior": SESSION_QUERY_PAGINATION_BEHAVIOR,
+            "by_method": pagination_behavior_by_method,
             "params": list(SESSION_QUERY_PAGINATION_PARAMS),
             "applies_to": pagination_applies_to,
+            "notes": [
+                "codex.sessions.list forwards limit upstream to Codex thread/list",
+                (
+                    "codex.sessions.messages.list reads the full thread history first and "
+                    "then keeps the most recent N mapped messages locally"
+                ),
+            ],
         },
         "method_contracts": method_contracts,
         "errors": {

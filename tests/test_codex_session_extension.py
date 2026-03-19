@@ -9,6 +9,8 @@ from codex_a2a_server.config import Settings
 from codex_a2a_server.extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_CONTROL_METHODS,
+    SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_MAX_LIMIT,
     SESSION_QUERY_METHODS,
     build_supported_jsonrpc_methods,
 )
@@ -168,6 +170,43 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         assert message["metadata"]["shared"]["session"]["id"] == "s-1"
         assert dummy.last_messages_params is not None
         assert dummy.last_messages_params.get("limit") == 5
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_applies_default_limit_when_omitted(monkeypatch):
+    import codex_a2a_server.app as app_module
+
+    dummy = DummyCodexClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "codex.sessions.list", "params": {}},
+        )
+        assert resp.status_code == 200
+        assert dummy.last_sessions_params == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
+
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "codex.sessions.messages.list",
+                "params": {"session_id": "s-1"},
+            },
+        )
+        assert resp.status_code == 200
+        assert dummy.last_messages_params == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
 
 
 @pytest.mark.asyncio
@@ -419,6 +458,38 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 1
         assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_limit_above_declared_max(monkeypatch):
+    import codex_a2a_server.app as app_module
+
+    dummy = DummyCodexClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "codex.sessions.list",
+                "params": {"limit": SESSION_QUERY_MAX_LIMIT + 1},
+            },
+        )
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["error"]["code"] == -32602
+        assert payload["error"]["message"] == f"limit must be <= {SESSION_QUERY_MAX_LIMIT}"
 
 
 @pytest.mark.asyncio

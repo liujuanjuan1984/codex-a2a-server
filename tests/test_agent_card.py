@@ -7,6 +7,10 @@ from codex_a2a_server.app import (
     WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
 )
+from codex_a2a_server.extension_contracts import (
+    SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_MAX_LIMIT,
+)
 from tests.helpers import make_settings
 
 
@@ -87,6 +91,17 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["tenant_isolation"] == "none"
     assert session_query.params["supported_metadata"] == ["codex.directory"]
     assert session_query.params["provider_private_metadata"] == ["codex.directory"]
+    assert session_query.params["pagination"]["mode"] == "limit"
+    assert session_query.params["pagination"]["default_limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert session_query.params["pagination"]["max_limit"] == SESSION_QUERY_MAX_LIMIT
+    assert session_query.params["pagination"]["behavior"] == "mixed"
+    assert session_query.params["pagination"]["by_method"] == {
+        "codex.sessions.list": "upstream_passthrough",
+        "codex.sessions.messages.list": "local_tail_slice",
+    }
+    assert any(
+        "forwards limit upstream" in note for note in session_query.params["pagination"]["notes"]
+    )
     assert (
         session_query.params["context_semantics"]["upstream_session_id_field"]
         == "metadata.shared.session.id"
