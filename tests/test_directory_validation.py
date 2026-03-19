@@ -14,7 +14,7 @@ def mock_client():
     settings = make_settings(
         a2a_bearer_token="test",
         codex_base_url="http://localhost",
-        codex_directory="/tmp/workspace",
+        codex_workspace_root="/tmp/workspace",
         a2a_allow_directory_override=True,
     )
 

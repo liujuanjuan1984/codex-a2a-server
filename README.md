@@ -140,7 +140,7 @@ export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-CODEX_DIRECTORY=/abs/path/to/project \
+CODEX_WORKSPACE_ROOT=/abs/path/to/workspace \
 codex-a2a-server
 ```
 

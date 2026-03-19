@@ -183,7 +183,7 @@ Per instance, deploy writes:
 
 - `config/codex.env`: non-secret Codex settings
   - `CODEX_APP_SERVER_LISTEN`
-  - `CODEX_DIRECTORY`
+  - `CODEX_WORKSPACE_ROOT`
   - `CODEX_TIMEOUT`
   - `CODEX_TIMEOUT_STREAM`
   - `CODEX_PROVIDER_ID`

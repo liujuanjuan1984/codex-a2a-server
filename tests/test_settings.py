@@ -23,12 +23,14 @@ def test_settings_valid():
         "A2A_BEARER_TOKEN": "test-token",
         "CODEX_TIMEOUT": "300",
         "CODEX_MODEL_REASONING_EFFORT": "high",
+        "CODEX_WORKSPACE_ROOT": "/tmp/workspace",
     }
     with mock.patch.dict(os.environ, env, clear=True):
         settings = Settings()
         assert settings.a2a_bearer_token == "test-token"
         assert settings.codex_timeout == 300.0
         assert settings.codex_model_reasoning_effort == "high"
+        assert settings.codex_workspace_root == "/tmp/workspace"
         assert settings.a2a_version == __version__
 
 

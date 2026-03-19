@@ -15,7 +15,7 @@ def test_readme_documents_released_cli_installation_via_uv_tool() -> None:
     assert "uv tool upgrade codex-a2a-server" in README_TEXT
     assert 'uv tool install "codex-a2a-server==<version>"' in README_TEXT
     assert "Install Released CLI" in README_TEXT
-    assert "CODEX_DIRECTORY=/abs/path/to/project" in README_TEXT
+    assert "CODEX_WORKSPACE_ROOT=/abs/path/to/workspace" in README_TEXT  # pragma: allowlist secret
     assert "codex-a2a-server deploy" in README_TEXT
     assert "GH_TOKEN" not in README_TEXT
     assert "create a PR from the working branch" in README_TEXT

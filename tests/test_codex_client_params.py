@@ -25,7 +25,7 @@ async def test_list_calls_use_expected_rpc_params() -> None:
     client = CodexClient(
         make_settings(
             a2a_bearer_token="t-1",
-            codex_directory="/safe",
+            codex_workspace_root="/safe",
             codex_timeout=1.0,
         )
     )
@@ -59,7 +59,7 @@ async def test_list_messages_applies_limit_locally_after_mapping() -> None:
     client = CodexClient(
         make_settings(
             a2a_bearer_token="t-1",
-            codex_directory="/safe",
+            codex_workspace_root="/safe",
             codex_timeout=1.0,
         )
     )
@@ -98,7 +98,7 @@ async def test_session_shell_uses_command_exec_without_thread_context() -> None:
     client = CodexClient(
         make_settings(
             a2a_bearer_token="t-1",
-            codex_directory="/safe",
+            codex_workspace_root="/safe",
             codex_timeout=1.0,
         )
     )

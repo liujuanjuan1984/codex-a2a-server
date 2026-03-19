@@ -170,7 +170,7 @@ codex_env_tmp="$(mktemp)"
   if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
     echo "CODEX_MODEL_ID=${CODEX_MODEL_ID}"
   fi
-  echo "CODEX_DIRECTORY=${WORKSPACE_DIR}"
+  echo "CODEX_WORKSPACE_ROOT=${WORKSPACE_DIR}"
   echo "CODEX_TIMEOUT=${CODEX_TIMEOUT:-300}"
   if [[ -n "${CODEX_TIMEOUT_STREAM:-}" ]]; then
     echo "CODEX_TIMEOUT_STREAM=${CODEX_TIMEOUT_STREAM}"

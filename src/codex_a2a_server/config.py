@@ -20,9 +20,9 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:4096",
         alias="CODEX_BASE_URL",
     )
-    codex_directory: str | None = Field(
+    codex_workspace_root: str | None = Field(
         default=None,
-        alias="CODEX_DIRECTORY",
+        alias="CODEX_WORKSPACE_ROOT",
     )
     codex_provider_id: str | None = Field(
         default=None,

@@ -239,7 +239,7 @@ class CodexClient:
     def __init__(self, settings: Settings) -> None:
         install_log_record_factory()
         self._settings = settings
-        self._directory = settings.codex_directory
+        self._workspace_root = settings.codex_workspace_root
         self._model_id = settings.codex_model_id
         self._stream_timeout = settings.codex_timeout_stream
         self._request_timeout = settings.codex_timeout
@@ -298,14 +298,14 @@ class CodexClient:
 
     @property
     def directory(self) -> str | None:
-        return self._directory
+        return self._workspace_root
 
     @property
     def settings(self) -> Settings:
         return self._settings
 
     def _query_params(self, directory: str | None = None) -> dict[str, str]:
-        d = directory or self._directory
+        d = directory or self._workspace_root
         if not d:
             return {}
         return {"directory": d}
@@ -805,8 +805,8 @@ class CodexClient:
             params["model"] = model
         if directory:
             params["cwd"] = directory
-        elif self._directory:
-            params["cwd"] = self._directory
+        elif self._workspace_root:
+            params["cwd"] = self._workspace_root
         result = await self._rpc_request("thread/start", params)
         if not isinstance(result, dict):
             raise RuntimeError("codex thread/start response missing result object")
@@ -922,8 +922,8 @@ class CodexClient:
         }
         if directory:
             params["cwd"] = directory
-        elif self._directory:
-            params["cwd"] = self._directory
+        elif self._workspace_root:
+            params["cwd"] = self._workspace_root
 
         if self._model_id:
             params["model"] = self._model_id
@@ -973,8 +973,8 @@ class CodexClient:
         }
         if directory:
             params["cwd"] = directory
-        elif self._directory:
-            params["cwd"] = self._directory
+        elif self._workspace_root:
+            params["cwd"] = self._workspace_root
         if self._model_id:
             params["model"] = self._model_id
         result = await self._rpc_request("turn/start", params)
@@ -1017,7 +1017,7 @@ class CodexClient:
             _build_shell_exec_params(
                 command=shlex.split(command_text),
                 directory=directory,
-                default_directory=self._directory,
+                default_workspace_root=self._workspace_root,
             ),
         )
         if not isinstance(result, dict):
@@ -1244,13 +1244,13 @@ def _build_shell_exec_params(
     *,
     command: list[str],
     directory: str | None,
-    default_directory: str | None,
+    default_workspace_root: str | None,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {"command": command}
     if directory:
         params["cwd"] = directory
-    elif default_directory:
-        params["cwd"] = default_directory
+    elif default_workspace_root:
+        params["cwd"] = default_workspace_root
     return params
 
 

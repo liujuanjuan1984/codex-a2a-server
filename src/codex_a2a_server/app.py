@@ -106,8 +106,8 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool | int]
     }
     if settings.a2a_project:
         context["project"] = settings.a2a_project
-    if settings.codex_directory:
-        context["workspace_root"] = settings.codex_directory
+    if settings.codex_workspace_root:
+        context["workspace_root"] = settings.codex_workspace_root
     if settings.codex_provider_id:
         context["provider_id"] = settings.codex_provider_id
     if settings.codex_model_id:
