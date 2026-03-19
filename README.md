@@ -63,7 +63,7 @@ A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 CODEX_WORKSPACE_ROOT=/abs/path/to/workspace codex-a2a-server
 ```
 
-Default local address: `http://127.0.0.1:8000`
+Agent Card: `http://127.0.0.1:8000/.well-known/agent-card.json`
 
 ## What You Get
 
@@ -140,41 +140,6 @@ This repository does not publish directly from an unmerged feature branch.
   compatibility expectations.
 - [Security Policy](SECURITY.md)
   Threat model, deployment caveats, and vulnerability disclosure guidance.
-
-## Development From Source
-
-Use the repository checkout directly only for development, local debugging, or
-validation against unreleased changes on `main`.
-
-1. Install dependencies:
-
-```bash
-uv sync --all-extras
-```
-
-2. Make sure local Codex is already usable:
-
-- verify `codex` is installed and available on `PATH` (or set `CODEX_CLI_BIN`)
-- verify Codex provider/auth configuration already works outside this repository
-
-3. Generate a local bearer token:
-
-```bash
-export A2A_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(24))')"
-```
-
-4. Start this service from the source tree:
-
-```bash
-CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server
-```
-
-5. Open the Agent Card:
-
-- `http://127.0.0.1:8000/.well-known/agent-card.json`
-
-For configuration, transport examples, and protocol details, use the dedicated
-docs instead of the root README.
 
 ## Development
 
