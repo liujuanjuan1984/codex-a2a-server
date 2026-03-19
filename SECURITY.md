@@ -21,7 +21,7 @@ The current deployment model is a single-tenant trust boundary by design.
   logs JSON payload previews, applies size guards, and suppresses full payload
   logging for `codex.*` JSON-RPC extension calls.
 - In systemd deployment mode, secret persistence is opt-in. The deploy scripts
-  no longer write `GH_TOKEN`, `A2A_BEARER_TOKEN`, or provider keys to disk
+  no longer write `A2A_BEARER_TOKEN` or provider keys to disk
   unless `ENABLE_SECRET_PERSISTENCE=true` is explicitly set.
 
 ## Threat Model

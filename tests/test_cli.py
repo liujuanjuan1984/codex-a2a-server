@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import sys
 from importlib import resources
 from pathlib import Path
-import sys
 from unittest import mock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from codex_a2a_server import __version__
 import codex_a2a_server.cli as cli
+from codex_a2a_server import __version__
 
 
 def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixture[str]) -> None:
@@ -32,8 +32,9 @@ def test_cli_deploy_help_exposes_flag_contract(capsys: pytest.CaptureFixture[str
     assert "--project" in help_text
     assert "--a2a-port" in help_text
     assert "--a2a-enable-health-endpoint" in help_text
-    assert "Secrets such as GH_TOKEN" in help_text
+    assert "Secrets such as A2A_BEARER_TOKEN" in help_text
     assert "Legacy key=value arguments are still accepted" in help_text
+    assert "--repo-url" not in help_text
 
 
 def test_cli_version_does_not_require_runtime_settings(

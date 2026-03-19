@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy an isolated Codex + A2A instance (single systemd service per project).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [package_spec=<spec>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
-# Secret env vars are only required when persisting them during deploy or when setup actions need them.
+# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [package_spec=<spec>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
+# Secret env vars are only required when persisting them during deploy or when runtime provider integrations need them.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
 #
@@ -29,8 +29,6 @@ A2A_LOG_BODY_LIMIT_INPUT=""
 DATA_ROOT_INPUT=""
 CODEX_PROVIDER_ID_INPUT=""
 CODEX_MODEL_ID_INPUT=""
-REPO_URL_INPUT=""
-REPO_BRANCH_INPUT=""
 PACKAGE_SPEC_INPUT=""
 CODEX_TIMEOUT_INPUT=""
 CODEX_TIMEOUT_STREAM_INPUT=""
@@ -52,10 +50,6 @@ for arg in "$@"; do
   case "${key,,}" in
     project|project_name)
       PROJECT_NAME="$value"
-      ;;
-    github_token|gh_token)
-      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable GH_TOKEN." >&2
-      exit 1
       ;;
     a2a_bearer_token|bearer_token)
       echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable A2A_BEARER_TOKEN." >&2
@@ -97,12 +91,6 @@ for arg in "$@"; do
     codex_model_id)
       CODEX_MODEL_ID_INPUT="$value"
       ;;
-    repo_url)
-      REPO_URL_INPUT="$value"
-      ;;
-    repo_branch)
-      REPO_BRANCH_INPUT="$value"
-      ;;
     package_spec)
       PACKAGE_SPEC_INPUT="$value"
       ;;
@@ -141,11 +129,11 @@ done
 if [[ -z "$PROJECT_NAME" ]]; then
   cat >&2 <<USAGE
 Usage:
-  [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
+  [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] \
   [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
-  [codex_provider_id=<id>] [codex_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [package_spec=<spec>] \
+  [codex_provider_id=<id>] [codex_model_id=<id>] [package_spec=<spec>] \
   [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -173,8 +161,6 @@ export_if_present() {
 
 export_if_present "CODEX_PROVIDER_ID" "$CODEX_PROVIDER_ID_INPUT"
 export_if_present "CODEX_MODEL_ID" "$CODEX_MODEL_ID_INPUT"
-export_if_present "REPO_URL" "$REPO_URL_INPUT"
-export_if_present "REPO_BRANCH" "$REPO_BRANCH_INPUT"
 export_if_present "CODEX_A2A_PACKAGE_SPEC" "$PACKAGE_SPEC_INPUT"
 export_if_present "CODEX_TIMEOUT" "$CODEX_TIMEOUT_INPUT"
 export_if_present "CODEX_TIMEOUT_STREAM" "$CODEX_TIMEOUT_STREAM_INPUT"

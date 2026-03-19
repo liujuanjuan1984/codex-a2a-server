@@ -93,9 +93,7 @@ codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 2. Populate the generated root-only secret files.
 
 ```bash
-sudo cp /data/codex-a2a/alpha/config/codex.auth.env.example /data/codex-a2a/alpha/config/codex.auth.env
 sudo cp /data/codex-a2a/alpha/config/a2a.secret.env.example /data/codex-a2a/alpha/config/a2a.secret.env
-sudoedit /data/codex-a2a/alpha/config/codex.auth.env
 sudoedit /data/codex-a2a/alpha/config/a2a.secret.env
 ```
 
@@ -108,16 +106,15 @@ codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 One-step deploy with secret persistence enabled:
 
 ```bash
-read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
-GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
+A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 codex-a2a-server deploy --project alpha --a2a-host 127.0.0.1 --a2a-port 8010
 ```
 
 Public URL example:
 
 ```bash
-GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
+A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 codex-a2a-server deploy \
   --project alpha \
   --a2a-host 127.0.0.1 \
@@ -130,14 +127,12 @@ codex-a2a-server deploy \
 By default `ENABLE_SECRET_PERSISTENCE=false`, so deploy does not write secrets
 to disk. It expects these files:
 
-- `config/codex.auth.env`: required, contains `GH_TOKEN`
 - `config/a2a.secret.env`: required, contains `A2A_BEARER_TOKEN`
 - `config/codex.secret.env`: optional provider keys such as
   `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`
 
 Templates are generated automatically as:
 
-- `codex.auth.env.example`
 - `a2a.secret.env.example`
 - `codex.secret.env.example`
 
@@ -172,14 +167,7 @@ Common CLI keys:
 
 Optional workspace bootstrap keys:
 
-- `--repo-url`
-- `--repo-branch`
-
 Notes:
-
-- `repo_url` / `repo_branch` are only for optionally cloning a project
-  repository into the instance workspace. They do not control how
-  `codex-a2a-server` itself is installed or updated.
 - `--package-spec` controls which published package spec is installed into the
   shared runtime when `update_a2a=true`.
 - runtime install precedence is `--package-spec <spec>` CLI override, then
@@ -217,8 +205,7 @@ Per instance, deploy writes:
   - `CODEX_TIMEOUT_STREAM`
   - `CODEX_PROVIDER_ID`
   - `CODEX_MODEL_ID`
-  - git askpass / author identity settings
-- `config/codex.auth.env`: root-only `GH_TOKEN`
+  - git author identity settings
 - `config/codex.secret.env`: root-only provider keys
 - `config/a2a.env`: non-secret A2A settings
   - `A2A_ENABLE_HEALTH_ENDPOINT`

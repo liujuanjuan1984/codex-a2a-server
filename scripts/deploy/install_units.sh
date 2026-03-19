@@ -36,7 +36,6 @@ Environment=CODEX_CORE_DIR=${CODEX_CORE_DIR}
 Environment=UV_PYTHON_DIR=${UV_PYTHON_DIR}
 Environment=PATH=${CODEX_CORE_DIR}/bin:${CODEX_A2A_RUNTIME_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=${DATA_ROOT}/%i/config/codex.env
-EnvironmentFile=-${DATA_ROOT}/%i/config/codex.auth.env
 EnvironmentFile=-${DATA_ROOT}/%i/config/codex.secret.env
 EnvironmentFile=${DATA_ROOT}/%i/config/a2a.env
 EnvironmentFile=-${DATA_ROOT}/%i/config/a2a.secret.env
@@ -54,7 +53,6 @@ ReadWritePaths=${DATA_ROOT}/%i
 ReadOnlyPaths=${CODEX_A2A_RUNTIME_DIR}
 ReadOnlyPaths=${CODEX_CORE_DIR}
 ReadOnlyPaths=${UV_PYTHON_DIR}
-ReadOnlyPaths=/usr/bin/gh
 
 [Install]
 WantedBy=multi-user.target

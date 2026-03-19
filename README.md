@@ -156,7 +156,7 @@ source checkout or a repository-local virtualenv.
 Release-based deploy entrypoint:
 
 ```bash
-GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
+A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 codex-a2a-server deploy \
   --project alpha \
   --a2a-host 127.0.0.1 \

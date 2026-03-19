@@ -55,7 +55,9 @@ def _build_deploy_parser(
         "--package-spec",
         help="Published package spec used when refreshing the shared runtime.",
     )
-    deploy_parser.add_argument("--codex-timeout", type=int, help="Codex request timeout in seconds.")
+    deploy_parser.add_argument(
+        "--codex-timeout", type=int, help="Codex request timeout in seconds."
+    )
     deploy_parser.add_argument(
         "--codex-timeout-stream",
         type=int,
@@ -73,7 +75,7 @@ def _build_deploy_parser(
         "--enable-secret-persistence",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Persist GH_TOKEN, A2A_BEARER_TOKEN, and provider keys into root-only secret files.",
+        help="Persist A2A_BEARER_TOKEN and provider keys into root-only secret files.",
     )
     deploy_parser.add_argument(
         "--update-a2a",
@@ -87,13 +89,8 @@ def _build_deploy_parser(
         default=None,
         help="Force a systemd restart even when the unit is already active.",
     )
-    deploy_parser.add_argument("--repo-url", help="Optional repository to clone into the workspace.")
-    deploy_parser.add_argument(
-        "--repo-branch",
-        help="Optional branch used with --repo-url when bootstrapping the workspace.",
-    )
     deploy_parser.epilog = (
-        "Secrets such as GH_TOKEN, A2A_BEARER_TOKEN, and provider API keys remain "
+        "Secrets such as A2A_BEARER_TOKEN and provider API keys remain "
         "environment-only inputs. Legacy key=value arguments are still accepted "
         "for compatibility, but flags are the preferred CLI contract."
     )
@@ -195,8 +192,6 @@ def _build_deploy_args(namespace: argparse.Namespace) -> list[str]:
         ("enable_secret_persistence", namespace.enable_secret_persistence),
         ("update_a2a", namespace.update_a2a),
         ("force_restart", namespace.force_restart),
-        ("repo_url", namespace.repo_url),
-        ("repo_branch", namespace.repo_branch),
     )
     for key, value in mappings:
         _append_key_value_arg(args, key, value)
