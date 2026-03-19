@@ -3,9 +3,9 @@
 ## Scope
 
 This repository is an adapter layer that exposes Codex through A2A HTTP+JSON and
-JSON-RPC interfaces. It adds authentication, task/session contracts, streaming,
-and deployment tooling, but it does not fully isolate upstream model
-credentials from Codex runtime behavior.
+JSON-RPC interfaces. It adds authentication, task/session contracts, and
+streaming behavior, but it does not fully isolate upstream model credentials
+from Codex runtime behavior.
 
 The current deployment model is a single-tenant trust boundary by design.
 
@@ -20,9 +20,6 @@ The current deployment model is a single-tenant trust boundary by design.
 - Payload logging is opt-in. When `A2A_LOG_PAYLOADS=true`, this service only
   logs JSON payload previews, applies size guards, and suppresses full payload
   logging for `codex.*` JSON-RPC extension calls.
-- In systemd deployment mode, secret persistence is opt-in. The deploy scripts
-  no longer write `A2A_BEARER_TOKEN` or provider keys to disk
-  unless `ENABLE_SECRET_PERSISTENCE=true` is explicitly set.
 
 ## Threat Model
 

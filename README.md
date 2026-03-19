@@ -5,7 +5,7 @@
 `codex-a2a-server` exposes Codex through standard A2A interfaces and adds the
 operational pieces that raw agent runtimes usually do not provide by default:
 authentication, session continuity, streaming contracts, interrupt handling,
-deployment tooling, and documentation for running it as a service.
+and documentation for running it as a service.
 
 ## Why This Project Exists
 
@@ -18,7 +18,7 @@ operations.
 In practice, `codex-a2a-server` acts as:
 
 - a protocol bridge from A2A to Codex
-- a security and deployment boundary around the Codex runtime
+- a security boundary around the Codex runtime
 - a stable contract layer for session, streaming, and interrupt behaviors
 
 ## Vision
@@ -28,7 +28,7 @@ infrastructure rather than local-only tools:
 
 - standard transport contracts instead of provider-specific glue
 - explicit runtime boundaries instead of ad-hoc shell wrappers
-- production-friendly deployment and observability instead of demo-only setups
+- production-friendly runtime behavior and observability instead of demo-only setups
 
 ## What It Already Provides
 
@@ -37,7 +37,7 @@ infrastructure rather than local-only tools:
 - session continuation and session query extensions
 - interrupt lifecycle mapping and callback validation
 - bearer-token auth, payload logging controls, and secret-handling guardrails
-- systemd multi-instance deployment and released-CLI startup paths
+- released-CLI startup and source-based runtime paths
 
 ## Logical Components
 
@@ -64,33 +64,31 @@ More detail: [Architecture Guide](docs/architecture.md)
 ## Current Progress
 
 The project already has a usable service baseline for internal or controlled
-deployments:
+runtime use:
 
 - core A2A send/stream flows are implemented
 - streaming contracts are normalized around shared metadata
 - interrupt ask/resolve lifecycle is surfaced explicitly
 - session continuity is available through shared metadata and JSON-RPC queries
-- deployment guidance now separates source development, released-CLI self-start,
-  and long-running systemd instances
+- released-CLI self-start and source-based runtime paths are both documented
 - security baseline now includes `SECURITY.md`, secret scanning, and safer
-  deployment defaults
+  runtime defaults
 
 ## Security Model
 
 This project improves the service boundary around Codex, but it is not a hard
 multi-tenant isolation layer.
 
-One deployed instance should be treated as a single-tenant trust boundary with
+One running instance should be treated as a single-tenant trust boundary with
 a shared workspace/environment.
 
 - the underlying Codex runtime may still need provider credentials
 - one instance is not tenant-isolated by default
-- deploy scripts default to not persisting secrets unless explicitly opted in
+- local runtime setup still needs a controlled environment
 
-Read before deployment:
+Read before use:
 
 - [SECURITY.md](SECURITY.md)
-- [Deployment Guide](docs/deployment.md)
 
 ## Recommended Client Side
 
@@ -149,20 +147,6 @@ Default address: `http://127.0.0.1:8000`
 For a longer self-start example with model and timeout overrides, use the
 [Usage Guide](docs/guide.md).
 
-For a managed long-running deployment, use the published-package systemd flow
-in the [Deployment Guide](docs/deployment.md). That path no longer relies on a
-source checkout or a repository-local virtualenv.
-
-Release-based deploy entrypoint:
-
-```bash
-A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-codex-a2a-server deploy \
-  --project alpha \
-  --a2a-host 127.0.0.1 \
-  --a2a-port 8010
-```
-
 ## Development From Source
 
 Use the repository checkout directly only for development, local debugging, or
@@ -203,9 +187,6 @@ docs instead of the root README.
 - [Compatibility Guide](docs/compatibility.md)
   Supported Python/runtime surface, extension stability, and ecosystem-facing
   compatibility expectations.
-- [Deployment Guide](docs/deployment.md)
-  systemd deployment from the published package, runtime secret strategy, and
-  operations guidance.
 - [Contributing Guide](CONTRIBUTING.md)
   Contributor workflow, validation baseline, and change expectations.
 - [Security Policy](SECURITY.md)

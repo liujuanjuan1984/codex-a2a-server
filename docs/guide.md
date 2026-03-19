@@ -133,7 +133,6 @@ Current implementation note:
 - `CODEX_SYSTEM`: reserved compatibility field (optional)
 - `CODEX_VARIANT`: deployment metadata only (optional)
 - `CODEX_TIMEOUT`: request timeout in seconds, default `120`
-  (systemd deployment template may write `300` by default)
 - `CODEX_TIMEOUT_STREAM`: streaming turn timeout in seconds (optional);
   unset means no explicit stream timeout for the streaming send path
 - `CODEX_BASE_URL`: reserved compatibility field for legacy HTTP mode; not used by app-server mode
@@ -210,7 +209,7 @@ CODEX_WORKSPACE_ROOT=/abs/path/to/workspace uv run codex-a2a-server
 ```
 
 This path is for contributors. End users should prefer the released CLI or the
-managed systemd deployment flow.
+released CLI self-start path.
 
 ## Service Behavior
 

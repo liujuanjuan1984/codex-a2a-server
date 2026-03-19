@@ -62,9 +62,6 @@ quote-style = "double"
 [tool.uv]
 package = true
 
-[tool.setuptools.package-data]
-codex_a2a_server = ["assets/scripts/*", "assets/scripts/deploy/*"]
-
 [tool.setuptools_scm]
 fallback_version = "0.1.0"
 tag_regex = "^v?(?P<version>.+)$"

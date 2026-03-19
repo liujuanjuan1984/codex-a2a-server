@@ -12,8 +12,7 @@ It is responsible for:
 
 - exposing A2A-facing HTTP+JSON and JSON-RPC endpoints
 - normalizing stream, session, and interrupt contracts
-- applying authentication, logging, and deployment-side guardrails
-- providing deployment tooling for long-running or lightweight service modes
+- applying authentication, logging, and runtime-side guardrails
 
 It is not responsible for:
 
@@ -83,7 +82,7 @@ The service introduces a boundary, but not a full trust boundary.
 - stable client-facing contract shape
 - auth enforcement on A2A entrypoints
 - payload logging controls
-- safer deployment defaults for runtime secrets
+- safer runtime defaults for secrets and health probing
 
 ### What still belongs to the Codex runtime boundary
 
@@ -101,5 +100,4 @@ Use the docs by responsibility:
 - [README](../README.md): project overview, value, vision, progress, and entry
   navigation
 - [Usage Guide](guide.md): configuration and protocol details
-- [Deployment Guide](deployment.md): operational setup and secret handling
 - [Security Policy](../SECURITY.md): threat model and disclosure guidance
