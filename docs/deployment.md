@@ -217,9 +217,8 @@ settings and A2A settings stay in one service boundary.
 
 ## Deploy Readiness Probe
 
-When `A2A_ENABLE_HEALTH_ENDPOINT=true`, `scripts/deploy/enable_instance.sh`
-waits for an authenticated `GET /health` probe before considering the service
-ready.
+When `A2A_ENABLE_HEALTH_ENDPOINT=true`, the packaged deploy flow waits for an
+authenticated `GET /health` probe before considering the service ready.
 
 - The probe uses `Authorization: Bearer <token>`
 - It prefers `A2A_BEARER_TOKEN` from the current environment

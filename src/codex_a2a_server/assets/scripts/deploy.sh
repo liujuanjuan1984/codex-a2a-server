@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Deploy an isolated Codex + A2A instance (single systemd service per project).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [package_spec=<spec>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
+# Internal usage: deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [codex_provider_id=<id>] [codex_model_id=<id>] [package_spec=<spec>] [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [enable_secret_persistence=<bool>] [update_a2a=true] [force_restart=true]
 # Secret env vars are only required when persisting them during deploy or when runtime provider integrations need them.
-# Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
+# Optional provider secret env: see deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
 #
 # Source of truth for all variable semantics/defaults:
@@ -128,14 +128,8 @@ done
 
 if [[ -z "$PROJECT_NAME" ]]; then
   cat >&2 <<USAGE
-Usage:
-  [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
-  ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
-  [a2a_enable_health_endpoint=<bool>] [a2a_enable_session_shell=<bool>] \
-  [a2a_interrupt_request_ttl_seconds=<int>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
-  [codex_provider_id=<id>] [codex_model_id=<id>] [package_spec=<spec>] \
-  [codex_timeout=<seconds>] [codex_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
-  [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
+Use the released CLI entrypoint:
+  codex-a2a-server deploy --help
 
 Provider secret env vars:
   ${PROVIDER_SECRET_ENV_LIST}

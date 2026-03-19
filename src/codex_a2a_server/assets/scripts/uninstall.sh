@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uninstall a single Codex + A2A instance created by scripts/deploy.sh.
+# Uninstall a single Codex + A2A instance created by the managed deploy flow.
 #
 # Safety model (enforced):
 # - This script always prints the uninstall actions (preview first).

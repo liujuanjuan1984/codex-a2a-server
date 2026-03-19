@@ -102,5 +102,5 @@ Use the docs by responsibility:
   navigation
 - [Usage Guide](guide.md): configuration and protocol details
 - [Deployment Guide](deployment.md): operational setup and secret handling
-- [Script Guide](../scripts/README.md): script entrypoints and purpose
+- [Script Guide](../scripts/README.md): remaining repository-maintainer script entrypoints
 - [Security Policy](../SECURITY.md): threat model and disclosure guidance

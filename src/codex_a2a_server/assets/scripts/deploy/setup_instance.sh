@@ -2,7 +2,7 @@
 # Create project user, directories, and env files for the codex-a2a systemd service.
 # Usage: [A2A_BEARER_TOKEN=<token>] [ENABLE_SECRET_PERSISTENCE=true] ./setup_instance.sh <project_name>
 # Requires env: DATA_ROOT, A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
-# Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
+# Optional provider secret env: see provider_secret_env_keys.sh
 # Secret persistence is opt-in via ENABLE_SECRET_PERSISTENCE=true.
 set -euo pipefail
 

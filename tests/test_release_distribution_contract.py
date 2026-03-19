@@ -6,17 +6,10 @@ SECURITY_TEXT = Path("SECURITY.md").read_text()
 SCRIPTS_README_TEXT = Path("scripts/README.md").read_text()
 PUBLISH_WORKFLOW_TEXT = Path(".github/workflows/publish.yml").read_text()
 DEPLOYMENT_GUIDE_TEXT = Path("docs/deployment.md").read_text()
-DEPLOY_SCRIPT_TEXT = Path("scripts/deploy.sh").read_text()
 INIT_SYSTEM_SCRIPT_TEXT = Path("scripts/init_system.sh").read_text()
 UNINSTALL_SCRIPT_TEXT = Path("scripts/uninstall.sh").read_text()
 SMOKE_TEST_SCRIPT_TEXT = Path("scripts/smoke_test_built_cli.sh").read_text()
-SETUP_INSTANCE_TEXT = Path("scripts/deploy/setup_instance.sh").read_text()
-INSTALL_UNITS_TEXT = Path("scripts/deploy/install_units.sh").read_text()
-ENABLE_INSTANCE_TEXT = Path("scripts/deploy/enable_instance.sh").read_text()
-UPDATE_A2A_TEXT = Path("scripts/deploy/update_a2a.sh").read_text()
-SHELL_HELPERS_TEXT = Path("scripts/shell_helpers.sh").read_text()
 SYNC_CODEX_DOCS_TEXT = Path("scripts/sync_codex_docs.sh").read_text()
-PROVIDER_SECRET_KEYS_TEXT = Path("scripts/deploy/provider_secret_env_keys.sh").read_text()
 
 
 def test_readme_documents_released_cli_installation_via_uv_tool() -> None:
@@ -46,6 +39,7 @@ def test_scripts_index_exposes_built_cli_smoke_test() -> None:
     assert "smoke_test_built_cli.sh" in SCRIPTS_README_TEXT
     assert "`uv tool`" in SCRIPTS_README_TEXT
     assert "codex-a2a-server deploy" in SCRIPTS_README_TEXT
+    assert "Repository-maintainer scripts live here." in SCRIPTS_README_TEXT
     assert "deploy_light.sh" not in SCRIPTS_README_TEXT
     assert "start_services.sh" not in SCRIPTS_README_TEXT
 
@@ -71,26 +65,30 @@ def test_released_cli_entrypoint_points_to_cli_module() -> None:
 
 
 def test_deploy_scripts_no_longer_require_github_runtime_credentials() -> None:
-    assert "GH_TOKEN" not in DEPLOY_SCRIPT_TEXT
-    assert "repo_url" not in DEPLOY_SCRIPT_TEXT
-    assert "repo_branch" not in DEPLOY_SCRIPT_TEXT
-    assert "GH_TOKEN" not in SETUP_INSTANCE_TEXT
-    assert "codex.auth.env" not in SETUP_INSTANCE_TEXT
-    assert "gh auth login" not in SETUP_INSTANCE_TEXT
-    assert "GIT_ASKPASS" not in SETUP_INSTANCE_TEXT
-    assert "config/codex.auth.env" not in INSTALL_UNITS_TEXT
+    deploy_asset = Path("src/codex_a2a_server/assets/scripts/deploy.sh").read_text()
+    setup_asset = Path("src/codex_a2a_server/assets/scripts/deploy/setup_instance.sh").read_text()
+    install_units_asset = Path(
+        "src/codex_a2a_server/assets/scripts/deploy/install_units.sh"
+    ).read_text()
+
+    assert "GH_TOKEN" not in deploy_asset
+    assert "repo_url" not in deploy_asset
+    assert "repo_branch" not in deploy_asset
+    assert "GH_TOKEN" not in setup_asset
+    assert "codex.auth.env" not in setup_asset
+    assert "gh auth login" not in setup_asset
+    assert "GIT_ASKPASS" not in setup_asset
+    assert "config/codex.auth.env" not in install_units_asset
 
 
-def test_packaged_deploy_assets_match_repository_scripts() -> None:
-    assert "assets/scripts/deploy.sh" in DEPLOY_SCRIPT_TEXT
-    assert 'exec bash "${ASSET_SCRIPT}" "$@"' in DEPLOY_SCRIPT_TEXT
+def test_repository_removes_redundant_deploy_wrappers() -> None:
+    assert not Path("scripts/deploy.sh").exists()
+    assert not Path("scripts/deploy").exists()
+    assert not Path("scripts/shell_helpers.sh").exists()
+
+
+def test_repository_wrappers_only_keep_remaining_user_or_maintainer_entrypoints() -> None:
     assert "assets/scripts/init_system.sh" in INIT_SYSTEM_SCRIPT_TEXT
     assert "assets/scripts/uninstall.sh" in UNINSTALL_SCRIPT_TEXT
     assert "assets/scripts/smoke_test_built_cli.sh" in SMOKE_TEST_SCRIPT_TEXT
-    assert "assets/scripts/shell_helpers.sh" in SHELL_HELPERS_TEXT
     assert "assets/scripts/sync_codex_docs.sh" in SYNC_CODEX_DOCS_TEXT
-    assert "assets/scripts/deploy/setup_instance.sh" in SETUP_INSTANCE_TEXT
-    assert "assets/scripts/deploy/install_units.sh" in INSTALL_UNITS_TEXT
-    assert "assets/scripts/deploy/enable_instance.sh" in ENABLE_INSTANCE_TEXT
-    assert "assets/scripts/deploy/update_a2a.sh" in UPDATE_A2A_TEXT
-    assert "assets/scripts/deploy/provider_secret_env_keys.sh" in PROVIDER_SECRET_KEYS_TEXT

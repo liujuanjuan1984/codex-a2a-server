@@ -1,9 +1,10 @@
 # scripts
 
-Executable scripts live here. This file is the primary script-entry guide.
+Repository-maintainer scripts live here.
 
-This document only explains script entrypoints. It does not repeat project
-overview, runtime contracts, or deployment rationale in detail.
+This document only explains the remaining repository-local script entrypoints.
+User-facing runtime and managed deploy entrypoints now live in the released
+`codex-a2a-server` CLI.
 
 ## Start Here
 
@@ -17,34 +18,32 @@ overview, runtime contracts, or deployment rationale in detail.
 - [`scripts/init_system.sh`](./init_system.sh):
   bootstrap host prerequisites and install the published `codex-a2a-server`
   runtime for managed systemd deployment.
-- [`scripts/deploy.sh`](./deploy.sh):
-  thin source-checkout wrapper around the packaged deploy asset used by
-  `codex-a2a-server deploy`, including authenticated `/health` readiness in
-  the canonical implementation.
 - [`scripts/uninstall.sh`](./uninstall.sh):
   remove one deployed instance (preview-first, explicit confirm required).
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh):
   validate that a built wheel can be installed through `uv tool` and becomes
   healthy.
+- [`scripts/sync_codex_docs.sh`](./sync_codex_docs.sh):
+  refresh vendored Codex documentation snapshots used by this repository.
 
 ## Quick Links
 
 - [`scripts/init_system.sh`](./init_system.sh)
-- [`scripts/deploy.sh`](./deploy.sh)
 - [`scripts/uninstall.sh`](./uninstall.sh)
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh)
+- [`scripts/sync_codex_docs.sh`](./sync_codex_docs.sh)
 
 ## Notes
 
-- End-user self-start no longer uses repository scripts. Prefer the published
-  CLI commands documented in [README.md](../README.md) and
-  [docs/guide.md](../docs/guide.md).
-- For managed release-based deployment, prefer `codex-a2a-server deploy`
-  instead of invoking `scripts/deploy.sh` directly.
-- Shell implementations now live under `src/codex_a2a_server/assets/scripts/`.
-  The repository-level `scripts/` entrypoints are thin wrappers around those
-  packaged assets so source runs and released CLI deploys share one
-  implementation.
+- End-user self-start and managed deployment no longer use repository scripts.
+  Prefer the published CLI commands documented in [README.md](../README.md),
+  [docs/guide.md](../docs/guide.md), and [docs/deployment.md](../docs/deployment.md).
+- Managed deployment uses `codex-a2a-server deploy`, including authenticated
+  `/health` readiness handling in the packaged deploy assets.
+- The packaged deploy path still performs authenticated `/health` readiness
+  checks when the health endpoint is enabled.
+- Package-internal deploy helpers now live only under
+  `src/codex_a2a_server/assets/scripts/`.
 - `scripts/smoke_test_built_cli.sh` validates that the built wheel can be installed by
   `uv tool` and that the released CLI becomes healthy.
 - Keep long-form documentation changes in `docs/` to avoid divergence.

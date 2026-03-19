@@ -1,9 +1,10 @@
 # scripts
 
-Executable scripts live here. This file is the primary script-entry guide.
+Packaged shell assets live here.
 
-This document only explains script entrypoints. It does not repeat project
-overview, runtime contracts, or deployment rationale in detail.
+This document only explains the packaged script assets behind the released CLI
+and repository-maintainer wrappers. It does not repeat project overview,
+runtime contracts, or deployment rationale in detail.
 
 ## Start Here
 
@@ -18,7 +19,7 @@ overview, runtime contracts, or deployment rationale in detail.
   bootstrap host prerequisites and install the published `codex-a2a-server`
   runtime for managed systemd deployment.
 - [`scripts/deploy.sh`](./deploy.sh):
-  source/internal helper behind `codex-a2a-server deploy`; it creates or
+  internal implementation behind `codex-a2a-server deploy`; it creates or
   updates one long-running `codex-a2a@.service` instance backed by the
   published package runtime, including an authenticated `/health` readiness
   probe when the health endpoint is enabled.
@@ -40,8 +41,7 @@ overview, runtime contracts, or deployment rationale in detail.
 - End-user self-start no longer uses repository scripts. Prefer the published
   CLI commands documented in [README.md](../README.md) and
   [docs/guide.md](../docs/guide.md).
-- For managed release-based deployment, prefer `codex-a2a-server deploy`
-  instead of invoking `scripts/deploy.sh` directly.
+- For managed release-based deployment, use `codex-a2a-server deploy`.
 - `scripts/deploy/` contains internal helpers orchestrated by
   `scripts/deploy.sh`.
 - `scripts/smoke_test_built_cli.sh` validates that the built wheel can be installed by
