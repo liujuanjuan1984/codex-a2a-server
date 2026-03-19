@@ -13,7 +13,10 @@ def test_readme_documents_released_cli_installation_via_uv_tool() -> None:
     assert "uv tool install codex-a2a-server" in README_TEXT
     assert "uv tool upgrade codex-a2a-server" in README_TEXT
     assert 'uv tool install "codex-a2a-server==<version>"' in README_TEXT
-    assert "Install Released CLI" in README_TEXT
+    assert "Self-start the released CLI against a workspace root:" in README_TEXT
+    assert README_TEXT.index("uv tool install codex-a2a-server") < README_TEXT.index(
+        "## Development From Source"
+    )
     assert "Install and verify the local `codex` CLI itself." in README_TEXT
     assert "does not provision Codex providers, login state, or API keys for you" in README_TEXT
     assert "Startup fails fast if the local `codex` runtime is missing" in README_TEXT
