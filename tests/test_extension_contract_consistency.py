@@ -116,10 +116,8 @@ async def test_session_query_runtime_result_envelope_matches_declared_contract(
     settings = make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, codex_timeout=1.0)
     card = build_agent_card(settings)
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
-    envelope_by_method = ext_by_uri[SESSION_QUERY_EXTENSION_URI].params["result_envelope"][
-        "by_method"
-    ]
-    expected_envelope = envelope_by_method[method]
+    method_contracts = ext_by_uri[SESSION_QUERY_EXTENSION_URI].params["method_contracts"]
+    expected_result = method_contracts[method]["result"]
 
     dummy = DummyCodexClient(settings)
     monkeypatch.setattr(app_module, "CodexClient", lambda _settings: dummy)
@@ -135,11 +133,20 @@ async def test_session_query_runtime_result_envelope_matches_declared_contract(
 
     assert response.status_code == 200
     payload = response.json()
-    assert sorted(payload["result"].keys()) == sorted(expected_envelope["fields"])
+    assert sorted(payload["result"].keys()) == sorted(expected_result["fields"])
 
-    items_field = expected_envelope.get("items_field")
+    items_field = expected_result.get("items_field")
     if items_field is not None:
         assert isinstance(payload["result"][items_field], list)
+
+
+def test_session_query_result_envelope_omits_method_level_contracts() -> None:
+    settings = make_settings(a2a_bearer_token="test-token")
+    card = build_agent_card(settings)
+    ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
+    session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
+
+    assert session_query.params["result_envelope"] == {}
 
 
 def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
