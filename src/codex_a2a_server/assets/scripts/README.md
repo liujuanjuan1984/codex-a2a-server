@@ -15,25 +15,18 @@ runtime contracts, or deployment rationale in detail.
 
 ## Which Script to Use
 
-- [`scripts/init_system.sh`](./init_system.sh):
-  bootstrap host prerequisites and install the published `codex-a2a-server`
-  runtime for managed systemd deployment.
 - [`scripts/deploy.sh`](./deploy.sh):
   internal implementation behind `codex-a2a-server deploy`; it creates or
   updates one long-running `codex-a2a@.service` instance backed by the
   published package runtime, including an authenticated `/health` readiness
   probe when the health endpoint is enabled.
-- [`scripts/uninstall.sh`](./uninstall.sh):
-  remove one deployed instance (preview-first, explicit confirm required).
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh):
   validate that a built wheel can be installed through `uv tool` and becomes
   healthy.
 
 ## Quick Links
 
-- [`scripts/init_system.sh`](./init_system.sh)
 - [`scripts/deploy.sh`](./deploy.sh)
-- [`scripts/uninstall.sh`](./uninstall.sh)
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh)
 
 ## Notes
@@ -41,6 +34,7 @@ runtime contracts, or deployment rationale in detail.
 - End-user self-start no longer uses repository scripts. Prefer the published
   CLI commands documented in [README.md](../README.md) and
   [docs/guide.md](../docs/guide.md).
+- Host bootstrap and uninstall flows are intentionally out of product scope.
 - For managed release-based deployment, use `codex-a2a-server deploy`.
 - `scripts/deploy/` contains internal helpers orchestrated by
   `scripts/deploy.sh`.

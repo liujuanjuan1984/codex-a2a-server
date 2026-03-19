@@ -113,5 +113,4 @@ def test_cli_deploy_rejects_legacy_key_value_args(
 def test_cli_packages_deploy_scripts_as_assets() -> None:
     assets_root = resources.files("codex_a2a_server.assets").joinpath("scripts")
     assert assets_root.joinpath("deploy.sh").is_file()
-    assert assets_root.joinpath("uninstall.sh").is_file()
     assert assets_root.joinpath("deploy", "enable_instance.sh").is_file()

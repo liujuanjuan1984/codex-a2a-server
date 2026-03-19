@@ -206,9 +206,6 @@ docs instead of the root README.
 - [Deployment Guide](docs/deployment.md)
   systemd deployment from the published package, runtime secret strategy, and
   operations guidance.
-- [Script Guide](scripts/README.md)
-  Repository-maintainer bootstrap, uninstall, docs-sync, and release smoke
-  test scripts.
 - [Contributing Guide](CONTRIBUTING.md)
   Contributor workflow, validation baseline, and change expectations.
 - [Security Policy](SECURITY.md)

@@ -6,8 +6,6 @@ SECURITY_TEXT = Path("SECURITY.md").read_text()
 SCRIPTS_README_TEXT = Path("scripts/README.md").read_text()
 PUBLISH_WORKFLOW_TEXT = Path(".github/workflows/publish.yml").read_text()
 DEPLOYMENT_GUIDE_TEXT = Path("docs/deployment.md").read_text()
-INIT_SYSTEM_SCRIPT_TEXT = Path("scripts/init_system.sh").read_text()
-UNINSTALL_SCRIPT_TEXT = Path("scripts/uninstall.sh").read_text()
 SMOKE_TEST_SCRIPT_TEXT = Path("scripts/smoke_test_built_cli.sh").read_text()
 SYNC_CODEX_DOCS_TEXT = Path("scripts/sync_codex_docs.sh").read_text()
 
@@ -40,6 +38,7 @@ def test_scripts_index_exposes_built_cli_smoke_test() -> None:
     assert "`uv tool`" in SCRIPTS_README_TEXT
     assert "codex-a2a-server deploy" in SCRIPTS_README_TEXT
     assert "Repository-maintainer scripts live here." in SCRIPTS_README_TEXT
+    assert "uninstall flows are out of scope" in SCRIPTS_README_TEXT
     assert "deploy_light.sh" not in SCRIPTS_README_TEXT
     assert "start_services.sh" not in SCRIPTS_README_TEXT
 
@@ -53,6 +52,8 @@ def test_deployment_guide_uses_published_runtime_and_single_service() -> None:
     assert "repo_url" not in DEPLOYMENT_GUIDE_TEXT
     assert ".venv/bin/codex-a2a-server" not in DEPLOYMENT_GUIDE_TEXT
     assert "codex@.service" not in DEPLOYMENT_GUIDE_TEXT
+    assert "./scripts/init_system.sh" not in DEPLOYMENT_GUIDE_TEXT
+    assert "./scripts/uninstall.sh" not in DEPLOYMENT_GUIDE_TEXT
 
 
 def test_security_policy_declares_single_tenant_boundary() -> None:
@@ -85,10 +86,10 @@ def test_repository_removes_redundant_deploy_wrappers() -> None:
     assert not Path("scripts/deploy.sh").exists()
     assert not Path("scripts/deploy").exists()
     assert not Path("scripts/shell_helpers.sh").exists()
+    assert not Path("scripts/init_system.sh").exists()
+    assert not Path("scripts/uninstall.sh").exists()
 
 
 def test_repository_wrappers_only_keep_remaining_user_or_maintainer_entrypoints() -> None:
-    assert "assets/scripts/init_system.sh" in INIT_SYSTEM_SCRIPT_TEXT
-    assert "assets/scripts/uninstall.sh" in UNINSTALL_SCRIPT_TEXT
     assert "assets/scripts/smoke_test_built_cli.sh" in SMOKE_TEST_SCRIPT_TEXT
     assert "assets/scripts/sync_codex_docs.sh" in SYNC_CODEX_DOCS_TEXT

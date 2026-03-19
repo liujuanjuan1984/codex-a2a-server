@@ -2,9 +2,10 @@
 
 Repository-maintainer scripts live here.
 
-This document only explains the remaining repository-local script entrypoints.
+This document only explains the remaining repository-local maintainer scripts.
 User-facing runtime and managed deploy entrypoints now live in the released
-`codex-a2a-server` CLI.
+`codex-a2a-server` CLI, and host-level bootstrap or uninstall flows are out of
+scope for this repository.
 
 ## Start Here
 
@@ -15,11 +16,6 @@ User-facing runtime and managed deploy entrypoints now live in the released
 
 ## Which Script to Use
 
-- [`scripts/init_system.sh`](./init_system.sh):
-  bootstrap host prerequisites and install the published `codex-a2a-server`
-  runtime for managed systemd deployment.
-- [`scripts/uninstall.sh`](./uninstall.sh):
-  remove one deployed instance (preview-first, explicit confirm required).
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh):
   validate that a built wheel can be installed through `uv tool` and becomes
   healthy.
@@ -28,8 +24,6 @@ User-facing runtime and managed deploy entrypoints now live in the released
 
 ## Quick Links
 
-- [`scripts/init_system.sh`](./init_system.sh)
-- [`scripts/uninstall.sh`](./uninstall.sh)
 - [`scripts/smoke_test_built_cli.sh`](./smoke_test_built_cli.sh)
 - [`scripts/sync_codex_docs.sh`](./sync_codex_docs.sh)
 
@@ -38,6 +32,9 @@ User-facing runtime and managed deploy entrypoints now live in the released
 - End-user self-start and managed deployment no longer use repository scripts.
   Prefer the published CLI commands documented in [README.md](../README.md),
   [docs/guide.md](../docs/guide.md), and [docs/deployment.md](../docs/deployment.md).
+- Host bootstrap and uninstall flows are intentionally not shipped as product
+  entrypoints. Treat those operations as deployment-specific operator tooling.
+- Bootstrap or uninstall flows are out of scope for this repository runtime surface.
 - Managed deployment uses `codex-a2a-server deploy`, including authenticated
   `/health` readiness handling in the packaged deploy assets.
 - The packaged deploy path still performs authenticated `/health` readiness

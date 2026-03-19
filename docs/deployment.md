@@ -32,36 +32,12 @@ The managed path no longer requires:
 - `sudo` access
 - systemd
 - Codex installed in a shared location
-  (default `/opt/.codex`; configured in `scripts/init_system.sh`)
 - `uv`
 - network access to PyPI unless you override the package source
 
-## Bootstrap Host Prerequisites
-
-Prepare the shared runtime once:
-
-```bash
-./scripts/init_system.sh
-```
-
-Default bootstrap behavior:
-
-- installs base tools, `gh`, Node.js, and `uv`
-- pre-downloads Python `3.10/3.11/3.12/3.13`
-- creates shared directories under `/opt/codex-a2a`, `/opt/.codex`,
-  `/opt/uv-python`, and `/data/codex-a2a`
-- creates `/opt/codex-a2a/runtime`
-- installs the published `codex-a2a-server` package into that runtime
-
-Important defaults from `scripts/init_system.sh`:
-
-- `CODEX_A2A_ROOT=/opt/codex-a2a`
-- `CODEX_A2A_RUNTIME_DIR=/opt/codex-a2a/runtime`
-- `CODEX_A2A_PACKAGE_SPEC=codex-a2a-server`
-- `CODEX_A2A_PYTHON_VERSION=3.13`
-
-If you need a different released version or index source, edit the constants in
-`scripts/init_system.sh` before running it.
+Host bootstrap is intentionally outside this project's runtime surface. Prepare
+the shared Codex installation, system packages, and filesystem layout with your
+own operator tooling before using the managed deploy flow.
 
 ## Instance Layout
 
@@ -79,6 +55,14 @@ Default permissions:
 - project root + `workspace` + `logs` + `run`: `700`
 - `config/`: `700`
 - config env files: `600`
+
+The default shared paths used by deploy are:
+
+- `CODEX_A2A_ROOT=/opt/codex-a2a`
+- `CODEX_A2A_RUNTIME_DIR=/opt/codex-a2a/runtime`
+- `CODEX_CORE_DIR=/opt/.codex`
+- `UV_PYTHON_DIR=/opt/uv-python`
+- `DATA_ROOT=/data/codex-a2a`
 
 ## Deploy One Instance
 
@@ -257,19 +241,6 @@ Show recent errors:
 sudo journalctl -u codex-a2a@alpha.service -p err --no-pager
 ```
 
-## Uninstall
-
-Preview uninstall actions:
-
-```bash
-./scripts/uninstall.sh project=alpha
-```
-
-Apply uninstall:
-
-```bash
-./scripts/uninstall.sh project=alpha confirm=UNINSTALL
-```
-
-The uninstall flow removes the per-project instance and user. It does not
-remove the shared runtime or the shared template unit.
+This project does not ship a managed uninstall flow. Removing service users,
+instance directories, or shared runtime paths is an operator-owned action and
+should be handled by deployment-specific tooling.

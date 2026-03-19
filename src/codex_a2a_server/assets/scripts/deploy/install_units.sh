@@ -15,7 +15,7 @@ A2A_BIN="${CODEX_A2A_RUNTIME_DIR}/bin/codex-a2a-server"
 
 if [[ ! -x "$A2A_BIN" ]]; then
   echo "codex-a2a-server runtime binary not found: ${A2A_BIN}" >&2
-  echo "Run ./scripts/init_system.sh or codex-a2a-server deploy --project <name> --update-a2a first." >&2
+  echo "Run codex-a2a-server deploy --project <name> --update-a2a first." >&2
   exit 1
 fi
 
