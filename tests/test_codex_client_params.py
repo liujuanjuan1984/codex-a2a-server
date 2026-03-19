@@ -758,6 +758,74 @@ async def test_question_request_emits_display_message_and_preserves_aliases() ->
 
 
 @pytest.mark.asyncio
+async def test_permission_request_emits_nested_request_text_fields() -> None:
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_server_request(
+        {
+            "id": 303,
+            "method": "execCommandApproval",
+            "params": {
+                "threadId": "thr-3",
+                "permission": "approval",
+                "request": {
+                    "description": "Agent wants to read the environment file.",
+                    "reason": "The command needs confirmation before continuing.",
+                },
+            },
+        }
+    )
+
+    assert len(events) == 1
+    props = events[0]["properties"]
+    assert props["display_message"] == "Agent wants to read the environment file."
+    assert props["request"] == {
+        "description": "Agent wants to read the environment file.",
+        "reason": "The command needs confirmation before continuing.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_question_request_emits_nested_context_fields_and_question_fallback() -> None:
+    client = CodexClient(make_settings(a2a_bearer_token="t-1", codex_timeout=1.0))
+    events: list[dict] = []
+
+    async def fake_enqueue(event: dict) -> None:
+        events.append(event)
+
+    client._enqueue_stream_event = fake_enqueue  # type: ignore[method-assign]
+
+    await client._handle_server_request(
+        {
+            "id": 304,
+            "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thr-4",
+                "context": {
+                    "description": "Please confirm how the agent should continue.",
+                    "questions": [{"id": "q1", "question": "Proceed with deployment?"}],
+                },
+            },
+        }
+    )
+
+    assert len(events) == 1
+    props = events[0]["properties"]
+    assert props["display_message"] == "Please confirm how the agent should continue."
+    assert props["context"] == {
+        "description": "Please confirm how the agent should continue.",
+        "questions": [{"id": "q1", "question": "Proceed with deployment?"}],
+    }
+    assert props["questions"] == [{"id": "q1", "question": "Proceed with deployment?"}]
+
+
+@pytest.mark.asyncio
 async def test_ensure_started_passes_reasoning_effort_override_to_codex_cli() -> None:
     client = CodexClient(
         make_settings(

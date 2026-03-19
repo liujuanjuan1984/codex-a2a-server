@@ -5,6 +5,65 @@ from typing import Any
 
 _INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
 _INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}
+_INTERRUPT_TEXT_FIELD_KEYS = (
+    "message",
+    "description",
+    "reason",
+    "prompt",
+    "display_message",
+    "displayMessage",
+)
+_INTERRUPT_NESTED_DETAIL_KEYS = ("request", "context", "prompt")
+_INTERRUPT_DISPLAY_MESSAGE_NESTED_PATHS = (
+    ("request", "message"),
+    ("request", "description"),
+    ("request", "prompt"),
+    ("request", "reason"),
+    ("context", "message"),
+    ("context", "description"),
+    ("context", "prompt"),
+    ("context", "reason"),
+    ("prompt", "message"),
+    ("prompt", "description"),
+)
+_INTERRUPT_QUESTION_LIST_PATHS = (
+    ("questions",),
+    ("request", "questions"),
+    ("context", "questions"),
+    ("prompt", "questions"),
+)
+
+
+def _normalized_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _resolve_nested_value(payload: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _first_nested_string(payload: Mapping[str, Any], *paths: tuple[str, ...]) -> str | None:
+    for path in paths:
+        value = _normalized_string(_resolve_nested_value(payload, path))
+        if value is not None:
+            return value
+    return None
+
+
+def _first_list(payload: Mapping[str, Any], *paths: tuple[str, ...]) -> list[Any]:
+    for path in paths:
+        value = _resolve_nested_value(payload, path)
+        if isinstance(value, list):
+            return value
+    return []
 
 
 def extract_string_list(value: Any) -> list[str]:
@@ -18,6 +77,34 @@ def extract_string_list(value: Any) -> list[str]:
         if normalized:
             result.append(normalized)
     return result
+
+
+def extract_interrupt_text_details(props: Mapping[str, Any]) -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    for key in _INTERRUPT_TEXT_FIELD_KEYS:
+        value = _normalized_string(props.get(key))
+        if value is not None:
+            details[key] = value
+    for key in _INTERRUPT_NESTED_DETAIL_KEYS:
+        value = props.get(key)
+        if isinstance(value, Mapping):
+            details[key] = dict(value)
+    display_message = (
+        _normalized_string(props.get("display_message"))
+        or _normalized_string(props.get("displayMessage"))
+        or _normalized_string(props.get("message"))
+        or _normalized_string(props.get("description"))
+        or _normalized_string(props.get("prompt"))
+        or _normalized_string(props.get("reason"))
+        or _first_nested_string(props, *_INTERRUPT_DISPLAY_MESSAGE_NESTED_PATHS)
+    )
+    if display_message is not None:
+        details["display_message"] = display_message
+    return details
+
+
+def extract_interrupt_questions(props: Mapping[str, Any]) -> list[Any]:
+    return _first_list(props, *_INTERRUPT_QUESTION_LIST_PATHS)
 
 
 def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -39,17 +126,7 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
             "patterns": extract_string_list(props.get("patterns")),
             "always": extract_string_list(props.get("always")),
         }
-        for key in (
-            "message",
-            "description",
-            "reason",
-            "prompt",
-            "display_message",
-            "displayMessage",
-        ):
-            value = props.get(key)
-            if isinstance(value, str) and value.strip():
-                details[key] = value.strip()
+        details.update(extract_interrupt_text_details(props))
         codex_private: dict[str, Any] = {}
         if isinstance(props.get("metadata"), Mapping):
             codex_private["metadata"] = dict(props.get("metadata"))
@@ -62,12 +139,8 @@ def extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | 
             "details": details,
             "codex_private": codex_private,
         }
-    questions = props.get("questions")
-    details = {"questions": questions if isinstance(questions, list) else []}
-    for key in ("message", "description", "reason", "prompt", "display_message", "displayMessage"):
-        value = props.get(key)
-        if isinstance(value, str) and value.strip():
-            details[key] = value.strip()
+    details = {"questions": extract_interrupt_questions(props)}
+    details.update(extract_interrupt_text_details(props))
     codex_private = {}
     tool = props.get("tool")
     if isinstance(tool, Mapping):

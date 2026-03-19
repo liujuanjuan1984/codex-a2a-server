@@ -14,6 +14,7 @@ from typing import Any
 
 from .config import Settings
 from .logging_context import bind_correlation_id, get_correlation_id, install_log_record_factory
+from .stream_interrupts import extract_interrupt_questions, extract_interrupt_text_details
 from .tool_call_payloads import (
     as_tool_call_payload,
     tool_call_output_delta_payload_from_notification,
@@ -27,22 +28,6 @@ _DEFAULT_CLIENT_NAME = "codex_a2a_server"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Server"
 _DEFAULT_CLIENT_VERSION = "0.1.0"
 _EVENT_QUEUE_MAXSIZE = 2048
-_INTERRUPT_TEXT_FIELD_KEYS = (
-    "message",
-    "description",
-    "prompt",
-    "reason",
-    "display_message",
-    "displayMessage",
-)
-_INTERRUPT_DISPLAY_MESSAGE_PRIORITY = (
-    "display_message",
-    "displayMessage",
-    "message",
-    "description",
-    "prompt",
-    "reason",
-)
 
 
 class CodexStartupPrerequisiteError(RuntimeError):
@@ -62,19 +47,6 @@ def _first_string(payload: dict[str, Any], *keys: str) -> str | None:
         if value is not None:
             return value
     return None
-
-
-def _extract_interrupt_text_fields(payload: dict[str, Any]) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for key in _INTERRUPT_TEXT_FIELD_KEYS:
-        value = _normalized_string(payload.get(key))
-        if value is not None:
-            fields[key] = value
-
-    display_message = _first_string(payload, *_INTERRUPT_DISPLAY_MESSAGE_PRIORITY)
-    if display_message is not None:
-        fields["display_message"] = display_message
-    return fields
 
 
 def _extract_tool_status(payload: dict[str, Any]) -> str | None:
@@ -812,7 +784,7 @@ class CodexClient:
                         "permission": _first_string(params, "permission") or "approval",
                         "patterns": params.get("patterns") or [],
                         "always": params.get("always") or [],
-                        **_extract_interrupt_text_fields(params),
+                        **extract_interrupt_text_details(params),
                         "metadata": {"method": method, "raw": params},
                     },
                 }
@@ -831,15 +803,14 @@ class CodexClient:
                 rpc_request_id=request_id,
                 params=params,
             )
-            questions = params.get("questions")
             await self._enqueue_stream_event(
                 {
                     "type": "question.asked",
                     "properties": {
                         "id": request_key,
                         "sessionID": session_id,
-                        "questions": questions if isinstance(questions, list) else [],
-                        **_extract_interrupt_text_fields(params),
+                        "questions": extract_interrupt_questions(params),
+                        **extract_interrupt_text_details(params),
                     },
                 }
             )
