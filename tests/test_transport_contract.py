@@ -40,6 +40,24 @@ def test_health_route_can_be_disabled() -> None:
     assert "/health" not in route_paths
 
 
+def test_create_app_resets_sse_app_status() -> None:
+    from sse_starlette.sse import AppStatus
+
+    original_should_exit = AppStatus.should_exit
+    original_should_exit_event = AppStatus.should_exit_event
+    try:
+        AppStatus.should_exit = True
+        AppStatus.should_exit_event = object()
+
+        create_app(make_settings(a2a_bearer_token="test-token"))
+
+        assert AppStatus.should_exit is False
+        assert AppStatus.should_exit_event is None
+    finally:
+        AppStatus.should_exit = original_should_exit
+        AppStatus.should_exit_event = original_should_exit_event
+
+
 def test_openapi_rest_message_routes_include_schema_examples_and_extension_contracts() -> None:
     app = create_app(make_settings(a2a_bearer_token="test-token"))
     openapi = app.openapi()
