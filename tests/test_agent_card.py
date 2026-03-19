@@ -99,6 +99,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "codex.sessions.list": "upstream_passthrough",
         "codex.sessions.messages.list": "local_tail_slice",
     }
+    assert session_query.params["result_envelope"] == {}
     assert any(
         "forwards limit upstream" in note for note in session_query.params["pagination"]["notes"]
     )

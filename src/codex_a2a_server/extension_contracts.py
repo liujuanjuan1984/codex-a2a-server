@@ -515,7 +515,6 @@ def build_session_query_extension_params(
         if key in active_query_methods
     }
     method_contracts: dict[str, Any] = {}
-    result_envelope_by_method: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
     pagination_behavior_by_method: dict[str, str] = {}
 
@@ -528,6 +527,8 @@ def build_session_query_extension_params(
         result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
         if method_contract.items_type:
             result_contract["items_type"] = method_contract.items_type
+        if method_contract.items_field:
+            result_contract["items_field"] = method_contract.items_field
 
         contract_doc: dict[str, Any] = {
             "params": params_contract,
@@ -548,11 +549,6 @@ def build_session_query_extension_params(
         if method_contract.notes:
             contract_doc["notes"] = list(method_contract.notes)
         method_contracts[method_contract.method] = contract_doc
-
-        envelope_doc: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_field:
-            envelope_doc["items_field"] = method_contract.items_field
-        result_envelope_by_method[method_contract.method] = envelope_doc
 
         if method_contract.pagination_mode == SESSION_QUERY_PAGINATION_MODE:
             pagination_applies_to.append(method_contract.method)
@@ -591,9 +587,7 @@ def build_session_query_extension_params(
             "error_data_fields": list(SESSION_QUERY_ERROR_DATA_FIELDS),
             "invalid_params_data_fields": list(SESSION_QUERY_INVALID_PARAMS_DATA_FIELDS),
         },
-        "result_envelope": {
-            "by_method": result_envelope_by_method,
-        },
+        "result_envelope": {},
         "context_semantics": {
             "a2a_context_id_field": "contextId",
             "upstream_session_id_field": SHARED_SESSION_BINDING_FIELD,
