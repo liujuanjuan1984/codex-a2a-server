@@ -15,6 +15,7 @@ from codex_a2a_server.extension_contracts import (
     build_supported_jsonrpc_methods,
 )
 from codex_a2a_server.jsonrpc_ext import CodexSessionQueryJSONRPCApplication
+from codex_a2a_server.profile import build_runtime_profile
 from tests.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.helpers import make_settings
 
@@ -43,7 +44,9 @@ def _build_extension_app(
         codex_client=DummyCodexClient(settings),
         methods=methods,
         protocol_version=settings.a2a_protocol_version,
-        supported_methods=build_supported_jsonrpc_methods(session_shell_enabled=True),
+        supported_methods=build_supported_jsonrpc_methods(
+            runtime_profile=build_runtime_profile(settings)
+        ),
         session_claim=session_claim,
         session_claim_finalize=session_claim_finalize,
         session_claim_release=session_claim_release,

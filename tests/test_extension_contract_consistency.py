@@ -14,6 +14,7 @@ from codex_a2a_server.app import (
 from codex_a2a_server.extension_contracts import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
@@ -21,6 +22,7 @@ from codex_a2a_server.extension_contracts import (
     build_streaming_extension_params,
     build_wire_contract_extension_params,
 )
+from codex_a2a_server.profile import build_runtime_profile
 from tests.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.helpers import make_settings
 
@@ -34,16 +36,40 @@ def _example_params_include_field(payload: object, dotted_field: str) -> bool:
     return True
 
 
+def test_capability_snapshot_tracks_conditional_shell_surface() -> None:
+    runtime_profile = build_runtime_profile(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_enable_session_shell=False,
+        )
+    )
+
+    snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+
+    assert snapshot.session_query_method_keys == (
+        "list_sessions",
+        "get_session_messages",
+        "prompt_async",
+        "command",
+    )
+    assert "codex.sessions.shell" not in snapshot.supported_jsonrpc_methods
+    assert snapshot.conditional_methods == {
+        "codex.sessions.shell": {
+            "reason": "disabled_by_configuration",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+    }
+
+
 def test_session_query_extension_ssot_matches_agent_card_contract() -> None:
     settings = make_settings(a2a_bearer_token="test-token")
+    runtime_profile = build_runtime_profile(settings)
     card = build_agent_card(settings)
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
-    deployment_context = session_query.params["deployment_context"]
     expected = build_session_query_extension_params(
-        deployment_context=deployment_context,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
 
     assert session_query.params == expected, (
@@ -59,14 +85,13 @@ def test_session_query_extension_ssot_matches_agent_card_contract_when_shell_dis
         a2a_bearer_token="test-token",
         a2a_enable_session_shell=False,
     )
+    runtime_profile = build_runtime_profile(settings)
     card = build_agent_card(settings)
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
-    deployment_context = session_query.params["deployment_context"]
     expected = build_session_query_extension_params(
-        deployment_context=deployment_context,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
 
     assert session_query.params == expected, (
@@ -151,6 +176,7 @@ def test_session_query_result_envelope_omits_method_level_contracts() -> None:
 
 def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     settings = make_settings(a2a_bearer_token="test-token")
+    runtime_profile = build_runtime_profile(settings)
     app = create_app(settings)
     openapi = app.openapi()
     post = openapi["paths"]["/"]["post"]
@@ -166,27 +192,23 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     interrupt_callback = contract["interrupt_callback"]
     wire_contract = contract["wire_contract"]
     compatibility_profile = contract["compatibility_profile"]
-    deployment_context = session_query["deployment_context"]
     expected_session_binding = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=True,
+        runtime_profile=runtime_profile,
     )
     expected_streaming = build_streaming_extension_params()
     expected_session_query = build_session_query_extension_params(
-        deployment_context=deployment_context,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
     expected_interrupt_callback = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_wire_contract = build_wire_contract_extension_params(
         protocol_version=settings.a2a_protocol_version,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        runtime_profile=deployment_context["profile"],
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
 
     assert session_binding == expected_session_binding, (

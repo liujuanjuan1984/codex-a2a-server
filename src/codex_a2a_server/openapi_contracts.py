@@ -16,6 +16,7 @@ from .extension_contracts import (
     build_streaming_extension_params,
     build_wire_contract_extension_params,
 )
+from .profile import RuntimeProfile
 
 
 def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool) -> str:
@@ -196,35 +197,26 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
 def patch_openapi_contract(
     app: FastAPI,
     *,
-    deployment_context: dict[str, Any],
-    directory_override_enabled: bool,
     protocol_version: str,
-    session_shell_enabled: bool,
+    runtime_profile: RuntimeProfile,
 ) -> None:
     session_binding = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=directory_override_enabled,
+        runtime_profile=runtime_profile,
     )
     streaming = build_streaming_extension_params()
     session_query = build_session_query_extension_params(
-        deployment_context=deployment_context,
-        session_shell_enabled=session_shell_enabled,
+        runtime_profile=runtime_profile,
     )
     interrupt_callback = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     wire_contract = build_wire_contract_extension_params(
         protocol_version=protocol_version,
-        session_shell_enabled=session_shell_enabled,
+        runtime_profile=runtime_profile,
     )
     compatibility_profile = build_compatibility_profile_params(
         protocol_version=protocol_version,
-        runtime_profile=(
-            deployment_context.get("profile")
-            if isinstance(deployment_context.get("profile"), dict)
-            else None
-        ),
-        session_shell_enabled=session_shell_enabled,
+        runtime_profile=runtime_profile,
     )
     original_openapi = app.openapi
 
@@ -241,7 +233,7 @@ def patch_openapi_contract(
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description(
-                        session_shell_enabled=session_shell_enabled
+                        session_shell_enabled=runtime_profile.session_shell_enabled
                     )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
@@ -259,7 +251,7 @@ def patch_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
-                                    session_shell_enabled=session_shell_enabled
+                                    session_shell_enabled=runtime_profile.session_shell_enabled
                                 )
 
             rest_post_contracts: dict[str, dict[str, Any]] = {

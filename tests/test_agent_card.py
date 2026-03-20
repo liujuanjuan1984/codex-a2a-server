@@ -33,7 +33,7 @@ def test_agent_card_declares_bearer_only_security() -> None:
     assert card.security == [{"bearerAuth": []}]
 
 
-def test_agent_card_injects_deployment_context_into_extensions() -> None:
+def test_agent_card_injects_profile_into_extensions() -> None:
     card = build_agent_card(
         make_settings(
             a2a_bearer_token="test-token",
@@ -49,50 +49,40 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     binding = ext_by_uri[SESSION_BINDING_EXTENSION_URI]
-    context = binding.params["deployment_context"]
-    assert context["project"] == "alpha"
-    assert context["workspace_root"] == "/srv/workspaces/alpha"
-    assert context["provider_id"] == "google"
-    assert context["model_id"] == "gemini-2.5-flash"
-    assert context["agent"] == "code-reviewer"
-    assert context["variant"] == "safe"
-    assert context["allow_directory_override"] is False
-    assert context["health_endpoint_enabled"] is True
-    assert context["interrupt_request_ttl_seconds"] == 3600
-    assert context["deployment_profile"] == "single_tenant_shared_workspace"
-    assert context["profile"]["profile_id"] == "codex-a2a-single-tenant-coding-v1"
-    assert context["profile"]["deployment"] == {
+    profile = binding.params["profile"]
+    assert profile["profile_id"] == "codex-a2a-single-tenant-coding-v1"
+    assert profile["deployment"] == {
         "id": "single_tenant_shared_workspace",
         "single_tenant": True,
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
     }
-    assert context["runtime_features"]["directory_binding"] == {
+    assert profile["runtime_context"] == {
+        "project": "alpha",
+        "workspace_root": "/srv/workspaces/alpha",
+        "provider_id": "google",
+        "model_id": "gemini-2.5-flash",
+        "agent": "code-reviewer",
+        "variant": "safe",
+    }
+    assert profile["runtime_features"]["directory_binding"] == {
         "allow_override": False,
         "scope": "workspace_root_only",
     }
-    assert context["runtime_features"]["session_shell"] == {
+    assert profile["runtime_features"]["session_shell"] == {
         "enabled": True,
         "availability": "enabled",
         "toggle": "A2A_ENABLE_SESSION_SHELL",
     }
-    assert context["runtime_features"]["interrupts"] == {
+    assert profile["runtime_features"]["interrupts"] == {
         "request_ttl_seconds": 3600,
     }
-    assert context["session_shell_enabled"] is True
-    assert context["single_tenant"] is True
-    assert context["shared_workspace_across_consumers"] is True
-    assert context["streaming_enabled"] is True
-    assert context["tenant_isolation"] == "none"
     assert binding.params["metadata_field"] == "metadata.shared.session.id"
     assert binding.params["supported_metadata"] == [
         "shared.session.id",
         "codex.directory",
     ]
     assert binding.params["provider_private_metadata"] == ["codex.directory"]
-    assert binding.params["directory_override_enabled"] is False
-    assert binding.params["shared_workspace_across_consumers"] is True
-    assert binding.params["tenant_isolation"] == "none"
 
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
@@ -105,9 +95,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     )
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
-    assert session_query.params["deployment_context"]["project"] == "alpha"
-    assert session_query.params["shared_workspace_across_consumers"] is True
-    assert session_query.params["tenant_isolation"] == "none"
+    assert session_query.params["profile"] == profile
     assert session_query.params["supported_metadata"] == ["codex.directory"]
     assert session_query.params["provider_private_metadata"] == ["codex.directory"]
     assert session_query.params["pagination"]["mode"] == "limit"
@@ -140,9 +128,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert any("command/exec" in note for note in shell_contract["notes"])
 
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
-    assert interrupt.params["deployment_context"]["project"] == "alpha"
-    assert interrupt.params["shared_workspace_across_consumers"] is True
-    assert interrupt.params["tenant_isolation"] == "none"
+    assert interrupt.params["profile"] == profile
     assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
     assert interrupt.params["supported_metadata"] == ["codex.directory"]
     assert interrupt.params["provider_private_metadata"] == ["codex.directory"]
@@ -156,13 +142,14 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     assert compatibility.params["profile_id"] == "codex-a2a-single-tenant-coding-v1"
     assert compatibility.params["protocol_version"] == "0.3.0"
-    assert compatibility.params["deployment_profile"] == {
+    assert compatibility.params["deployment"] == {
         "id": "single_tenant_shared_workspace",
         "single_tenant": True,
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
     }
-    assert compatibility.params["runtime_profile"] == context["profile"]
+    assert compatibility.params["deployment"] == profile["deployment"]
+    assert compatibility.params["runtime_features"] == profile["runtime_features"]
     assert compatibility.params["core"]["jsonrpc_methods"] == [
         "message/send",
         "message/stream",
@@ -229,12 +216,13 @@ def test_agent_card_omits_shell_method_when_disabled() -> None:
     assert "shell" not in session_query.params["methods"]
     assert "shell" not in session_query.params["control_methods"]
     assert "codex.sessions.shell" not in session_query.params["method_contracts"]
-    assert session_query.params["deployment_context"]["session_shell_enabled"] is False
-    assert session_query.params["deployment_context"]["interrupt_request_ttl_seconds"] == 45
-    assert session_query.params["deployment_context"]["runtime_features"]["session_shell"] == {
+    assert session_query.params["profile"]["runtime_features"]["session_shell"] == {
         "enabled": False,
         "availability": "disabled",
         "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }
+    assert session_query.params["profile"]["runtime_features"]["interrupts"] == {
+        "request_ttl_seconds": 45
     }
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     assert "codex.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
@@ -247,7 +235,7 @@ def test_agent_card_omits_shell_method_when_disabled() -> None:
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     shell_policy = compatibility.params["method_retention"]["codex.sessions.shell"]
     assert shell_policy["availability"] == "disabled"
-    assert compatibility.params["runtime_profile"]["runtime_features"]["session_shell"] == {
+    assert compatibility.params["runtime_features"]["session_shell"] == {
         "enabled": False,
         "availability": "disabled",
         "toggle": "A2A_ENABLE_SESSION_SHELL",

@@ -90,6 +90,13 @@ Current profile shape:
   - `interrupts.request_ttl_seconds=<int>`
   - `service_features.streaming.enabled=true`
   - `service_features.health_endpoint.enabled=true|false`
+- runtime context:
+  - `project=<optional>`
+  - `workspace_root=<optional>`
+  - `provider_id=<optional>`
+  - `model_id=<optional>`
+  - `agent=<optional>`
+  - `variant=<optional>`
 - core JSON-RPC methods:
   - `message/send`
   - `message/stream`
@@ -239,9 +246,8 @@ described first in [README.md](../README.md) and above in this guide.
 
 - `GET /health` is a lightweight authenticated status probe. It requires the
   same `Authorization: Bearer <token>` header as other protected endpoints and
-  returns service status plus a structured `profile` summary and compatibility-
-  relevant runtime flags such as streaming, session shell, and interrupt TTL; it
-  does not call upstream Codex.
+  returns service status plus a structured `profile` summary; it does not call
+  upstream Codex.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
 - Within one `codex-a2a-server` instance, all consumers share the same

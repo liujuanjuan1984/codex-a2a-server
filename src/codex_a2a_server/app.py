@@ -47,12 +47,12 @@ from .extension_contracts import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
-    build_supported_jsonrpc_methods,
     build_wire_contract_extension_params,
 )
 from .jsonrpc_ext import CodexSessionQueryJSONRPCApplication
@@ -64,7 +64,7 @@ from .logging_context import (
     set_correlation_id,
 )
 from .openapi_contracts import patch_openapi_contract
-from .profile import build_runtime_profile
+from .profile import RuntimeProfile, build_runtime_profile
 from .request_handler import CodexRequestHandler
 
 logger = logging.getLogger(__name__)
@@ -140,25 +140,7 @@ def _build_sse_streaming_route(
     return route
 
 
-def _build_deployment_context(settings: Settings) -> dict[str, Any]:
-    runtime_profile = build_runtime_profile(settings)
-    context: dict[str, Any] = runtime_profile.deployment_context_dict()
-    if settings.a2a_project:
-        context["project"] = settings.a2a_project
-    if settings.codex_workspace_root:
-        context["workspace_root"] = settings.codex_workspace_root
-    if settings.codex_provider_id:
-        context["provider_id"] = settings.codex_provider_id
-    if settings.codex_model_id:
-        context["model_id"] = settings.codex_model_id
-    if settings.codex_agent:
-        context["agent"] = settings.codex_agent
-    if settings.codex_variant:
-        context["variant"] = settings.codex_variant
-    return context
-
-
-def _build_agent_card_description(settings: Settings, deployment_context: dict[str, Any]) -> str:
+def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for Codex."
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
@@ -174,14 +156,15 @@ def _build_agent_card_description(settings: Settings, deployment_context: dict[s
         "underlying Codex workspace/environment."
     )
     parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
-    project = deployment_context.get("project")
+    runtime_context = runtime_profile.runtime_context
+    project = runtime_context.project
     if isinstance(project, str) and project.strip():
         parts.append(f"Deployment project: {project}.")
-    workspace_root = deployment_context.get("workspace_root")
+    workspace_root = runtime_context.workspace_root
     if isinstance(workspace_root, str) and workspace_root.strip():
         parts.append(f"Workspace root: {workspace_root}.")
-    provider_id = deployment_context.get("provider_id")
-    model_id = deployment_context.get("model_id")
+    provider_id = runtime_context.provider_id
+    model_id = runtime_context.model_id
     if isinstance(provider_id, str) and isinstance(model_id, str):
         parts.append(f"Default upstream model: {provider_id}/{model_id}.")
     return " ".join(parts)
@@ -197,31 +180,29 @@ def _build_chat_examples(project: str | None) -> list[str]:
     return examples
 
 
-def build_agent_card(settings: Settings) -> AgentCard:
+def build_agent_card(
+    settings: Settings, *, runtime_profile: RuntimeProfile | None = None
+) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
-    deployment_context = _build_deployment_context(settings)
-    runtime_profile = deployment_context.get("profile")
+    runtime_profile = runtime_profile or build_runtime_profile(settings)
     session_binding_extension_params = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=settings.a2a_allow_directory_override,
+        runtime_profile=runtime_profile,
     )
     streaming_extension_params = build_streaming_extension_params()
     session_query_extension_params = build_session_query_extension_params(
-        deployment_context=deployment_context,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context
+        runtime_profile=runtime_profile
     )
     wire_contract_extension_params = build_wire_contract_extension_params(
         protocol_version=settings.a2a_protocol_version,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        runtime_profile=runtime_profile if isinstance(runtime_profile, dict) else None,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
@@ -236,7 +217,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
 
     return AgentCard(
         name=settings.a2a_title,
-        description=_build_agent_card_description(settings, deployment_context),
+        description=_build_agent_card_description(settings, runtime_profile),
         url=base_url,
         documentation_url=settings.a2a_documentation_url,
         version=settings.a2a_version,
@@ -410,16 +391,16 @@ def create_app(settings: Settings) -> FastAPI:
         yield
         await client.close()
 
-    deployment_context = _build_deployment_context(settings)
     runtime_profile = build_runtime_profile(settings)
-    agent_card = build_agent_card(settings)
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    agent_card = build_agent_card(settings, runtime_profile=runtime_profile)
     context_builder = IdentityAwareCallContextBuilder()
     jsonrpc_methods = {
         **SESSION_QUERY_METHODS,
         **SESSION_CONTROL_METHODS,
         **INTERRUPT_CALLBACK_METHODS,
     }
-    if not settings.a2a_enable_session_shell:
+    if "shell" not in capability_snapshot.session_query_method_keys:
         jsonrpc_methods.pop("shell", None)
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
@@ -430,9 +411,7 @@ def create_app(settings: Settings) -> FastAPI:
         codex_client=client,
         methods=jsonrpc_methods,
         protocol_version=settings.a2a_protocol_version,
-        supported_methods=build_supported_jsonrpc_methods(
-            session_shell_enabled=settings.a2a_enable_session_shell
-        ),
+        supported_methods=list(capability_snapshot.supported_jsonrpc_methods),
         directory_resolver=executor.resolve_directory,
         session_claim=executor.claim_session,
         session_claim_finalize=executor.finalize_session_claim,
@@ -706,10 +685,8 @@ def create_app(settings: Settings) -> FastAPI:
 
     patch_openapi_contract(
         app,
-        deployment_context=deployment_context,
-        directory_override_enabled=settings.a2a_allow_directory_override,
         protocol_version=settings.a2a_protocol_version,
-        session_shell_enabled=settings.a2a_enable_session_shell,
+        runtime_profile=runtime_profile,
     )
 
     app_status_cls: Any | None = None

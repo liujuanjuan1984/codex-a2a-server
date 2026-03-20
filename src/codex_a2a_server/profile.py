@@ -74,6 +74,32 @@ class ServiceFeaturesProfile:
 
 
 @dataclass(frozen=True)
+class RuntimeContext:
+    project: str | None = None
+    workspace_root: str | None = None
+    provider_id: str | None = None
+    model_id: str | None = None
+    agent: str | None = None
+    variant: str | None = None
+
+    def as_dict(self) -> dict[str, str]:
+        context: dict[str, str] = {}
+        if self.project:
+            context["project"] = self.project
+        if self.workspace_root:
+            context["workspace_root"] = self.workspace_root
+        if self.provider_id:
+            context["provider_id"] = self.provider_id
+        if self.model_id:
+            context["model_id"] = self.model_id
+        if self.agent:
+            context["agent"] = self.agent
+        if self.variant:
+            context["variant"] = self.variant
+        return context
+
+
+@dataclass(frozen=True)
 class RuntimeProfile:
     profile_id: str
     deployment: DeploymentProfile
@@ -81,6 +107,11 @@ class RuntimeProfile:
     session_shell: SessionShellProfile
     interrupts: InterruptProfile
     service_features: ServiceFeaturesProfile
+    runtime_context: RuntimeContext
+
+    @property
+    def session_shell_enabled(self) -> bool:
+        return self.session_shell.enabled
 
     def runtime_features_dict(self) -> dict[str, Any]:
         return {
@@ -91,29 +122,15 @@ class RuntimeProfile:
         }
 
     def summary_dict(self) -> dict[str, Any]:
-        return {
+        profile = {
             "profile_id": self.profile_id,
             "deployment": self.deployment.as_dict(),
             "runtime_features": self.runtime_features_dict(),
         }
-
-    def deployment_context_dict(self) -> dict[str, Any]:
-        deployment = self.deployment.as_dict()
-        runtime_features = self.runtime_features_dict()
-        return {
-            "profile": self.summary_dict(),
-            "profile_id": self.profile_id,
-            "deployment_profile": deployment["id"],
-            "allow_directory_override": self.directory_binding.allow_override,
-            "health_endpoint_enabled": self.service_features.health_endpoint["enabled"],
-            "interrupt_request_ttl_seconds": self.interrupts.request_ttl_seconds,
-            "session_shell_enabled": self.session_shell.enabled,
-            "single_tenant": deployment["single_tenant"],
-            "shared_workspace_across_consumers": deployment["shared_workspace_across_consumers"],
-            "streaming_enabled": self.service_features.streaming["enabled"],
-            "tenant_isolation": deployment["tenant_isolation"],
-            "runtime_features": runtime_features,
-        }
+        runtime_context = self.runtime_context.as_dict()
+        if runtime_context:
+            profile["runtime_context"] = runtime_context
+        return profile
 
     def health_payload(self, *, service: str, version: str) -> dict[str, Any]:
         return {
@@ -121,9 +138,6 @@ class RuntimeProfile:
             "service": service,
             "version": version,
             "profile": self.summary_dict(),
-            "streaming_enabled": self.service_features.streaming["enabled"],
-            "session_shell_enabled": self.session_shell.enabled,
-            "interrupt_request_ttl_seconds": self.interrupts.request_ttl_seconds,
         }
 
 
@@ -161,5 +175,13 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
                 "availability": ("enabled" if settings.a2a_enable_health_endpoint else "disabled"),
                 "toggle": "A2A_ENABLE_HEALTH_ENDPOINT",
             },
+        ),
+        runtime_context=RuntimeContext(
+            project=settings.a2a_project,
+            workspace_root=settings.codex_workspace_root,
+            provider_id=settings.codex_provider_id,
+            model_id=settings.codex_model_id,
+            agent=settings.codex_agent,
+            variant=settings.codex_variant,
         ),
     )

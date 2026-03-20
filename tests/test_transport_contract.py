@@ -181,7 +181,7 @@ async def test_health_endpoint_requires_bearer_token(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint_with_bearer_token_reports_runtime_flags(monkeypatch) -> None:
+async def test_health_endpoint_with_bearer_token_reports_profile(monkeypatch) -> None:
     import codex_a2a_server.app as app_module
 
     settings = make_settings(
@@ -236,9 +236,6 @@ async def test_health_endpoint_with_bearer_token_reports_runtime_flags(monkeypat
                 },
             },
         },
-        "streaming_enabled": True,
-        "session_shell_enabled": False,
-        "interrupt_request_ttl_seconds": 90,
     }
 
 
