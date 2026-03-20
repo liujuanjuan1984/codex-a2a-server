@@ -5,7 +5,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,7 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
     Message,
+    Part,
     Role,
     Task,
     TaskState,
@@ -52,7 +53,7 @@ class _TTLCache:
         *,
         ttl_seconds: int,
         maxsize: int,
-        now: callable[[], float] = time.monotonic,
+        now: Callable[[], float] = time.monotonic,
         refresh_on_get: bool = False,
     ) -> None:
         self._ttl_seconds = int(ttl_seconds)
@@ -302,7 +303,7 @@ class CodexAgentExecutor(AgentExecutor):
                     final=False,
                 )
             )
-            send_kwargs: dict[str, str | float | None] = {"directory": directory}
+            send_kwargs: dict[str, Any] = {"directory": directory}
             if streaming_request:
                 send_kwargs["timeout_override"] = self._client.stream_timeout
             response = await self._client.send_message(
@@ -385,7 +386,7 @@ class CodexAgentExecutor(AgentExecutor):
                 artifact = Artifact(
                     artifact_id=str(uuid.uuid4()),
                     name="response",
-                    parts=[TextPart(text=response_text)],
+                    parts=[Part(root=TextPart(text=response_text))],
                 )
                 history = build_history(context)
                 task = Task(
@@ -679,7 +680,7 @@ class CodexAgentExecutor(AgentExecutor):
         error_message = Message(
             message_id=str(uuid.uuid4()),
             role=Role.agent,
-            parts=[TextPart(text=message)],
+            parts=[Part(root=TextPart(text=message))],
             task_id=task_id,
             context_id=context_id,
         )

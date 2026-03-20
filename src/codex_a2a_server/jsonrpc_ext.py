@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
@@ -13,6 +13,7 @@ from a2a.types import (
     JSONRPCError,
     JSONRPCRequest,
     Message,
+    Part,
     Role,
     Task,
     TaskState,
@@ -25,7 +26,13 @@ from starlette.responses import Response
 
 from .codex_client import CodexClient, InterruptRequestBinding, InterruptRequestError
 from .jsonrpc_models import (
+    CommandControlParams,
     JsonRpcParamsValidationError,
+    PermissionReplyParams,
+    PromptAsyncControlParams,
+    QuestionRejectParams,
+    QuestionReplyParams,
+    ShellControlParams,
     parse_command_params,
     parse_get_session_messages_params,
     parse_list_sessions_params,
@@ -115,7 +122,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     msg = Message(
         message_id=message_id,
         role=role,
-        parts=[TextPart(text=text)],
+        parts=[Part(root=TextPart(text=text))],
         context_id=_session_context_id(session_id),
         metadata={
             "shared": {"session": {"id": session_id}},
@@ -431,6 +438,7 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *,
         request: Request,
     ) -> Response:
+        parsed_params: PromptAsyncControlParams | CommandControlParams | ShellControlParams
         try:
             if base_request.method == self._method_prompt_async:
                 parsed_params = parse_prompt_async_params(params)
@@ -472,24 +480,24 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     directory=directory,
                 )
             elif base_request.method == self._method_command:
-                raw_result = await self._codex_client.session_command(
+                command_result = await self._codex_client.session_command(
                     session_id,
                     request=request_payload,
                     directory=directory,
                 )
-                item = _as_a2a_message(session_id, _message_to_item(raw_result))
+                item = _as_a2a_message(session_id, _message_to_item(command_result))
                 if item is None:
                     raise RuntimeError(
                         "Codex session command response could not be mapped to A2A Message"
                     )
                 result = {"item": item}
             else:
-                raw_result = await self._codex_client.session_shell(
+                shell_result = await self._codex_client.session_shell(
                     session_id,
                     request=request_payload,
                     directory=directory,
                 )
-                item = _as_a2a_message(session_id, raw_result)
+                item = _as_a2a_message(session_id, shell_result)
                 if item is None:
                     raise RuntimeError(
                         "Codex session shell response could not be mapped to A2A Message"
@@ -564,6 +572,7 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *,
         request: Request,
     ) -> Response:
+        parsed_params: PermissionReplyParams | QuestionReplyParams | QuestionRejectParams
         try:
             if base_request.method == self._method_reply_permission:
                 parsed_params = parse_permission_reply_params(params)
@@ -634,8 +643,9 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
         try:
             if base_request.method == self._method_reply_permission:
-                reply = parsed_params.reply
-                message = parsed_params.message
+                permission_params = cast(PermissionReplyParams, parsed_params)
+                reply = permission_params.reply
+                message = permission_params.message
                 await self._codex_client.permission_reply(
                     request_id,
                     reply=reply,
@@ -648,7 +658,8 @@ class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     "reply": reply,
                 }
             elif base_request.method == self._method_reply_question:
-                answers = parsed_params.answers
+                question_params = cast(QuestionReplyParams, parsed_params)
+                answers = question_params.answers
                 await self._codex_client.question_reply(
                     request_id,
                     answers=answers,

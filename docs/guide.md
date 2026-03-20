@@ -159,7 +159,7 @@ Current implementation note:
   in-flight execution/session-create cleanup after issuing cancellation,
   default `1.0`; `0` means best-effort cancel without waiting
 - `A2A_STREAM_SSE_PING_SECONDS`: transport-level SSE keepalive interval,
-  default `10.0`
+  default `10` (integer seconds)
 - `A2A_STREAM_IDLE_DIAGNOSTIC_SECONDS`: threshold before the server emits a
   stream idle diagnostic log, default `60.0`
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: TTL for pending interrupt callbacks

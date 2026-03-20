@@ -16,6 +16,7 @@ from . import __version__
 from .config import Settings
 from .logging_context import bind_correlation_id, get_correlation_id, install_log_record_factory
 from .tool_call_payloads import (
+    ToolCallSourceMethod,
     as_tool_call_payload,
     tool_call_output_delta_payload_from_notification,
     tool_call_state_payload_from_item,
@@ -23,7 +24,12 @@ from .tool_call_payloads import (
 
 logger = logging.getLogger(__name__)
 
-_UNSET = object()
+
+class _UnsetType:
+    pass
+
+
+_UNSET = _UnsetType()
 _DEFAULT_CLIENT_NAME = "codex_a2a_server"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Server"
 _EVENT_QUEUE_MAXSIZE = 2048
@@ -171,11 +177,16 @@ def _extract_tool_status(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _tool_source_method(method: str) -> str | None:
+def _tool_source_method(method: str) -> ToolCallSourceMethod | None:
     parts = method.split("/")
     if len(parts) < 2:
         return None
-    return _normalized_string(parts[1])
+    normalized = _normalized_string(parts[1])
+    if normalized == "commandExecution":
+        return "commandExecution"
+    if normalized == "fileChange":
+        return "fileChange"
+    return None
 
 
 def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[str, Any] | None:
@@ -194,7 +205,7 @@ def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[s
     tool = _first_string(params, "tool", "name")
     status = _extract_tool_status(params)
     source_method = _tool_source_method(method)
-    if source_method not in {"commandExecution", "fileChange"}:
+    if source_method is None:
         return None
     payload = tool_call_output_delta_payload_from_notification(
         source_method=source_method,
@@ -841,9 +852,9 @@ class CodexClient:
                     if status.lower() in {"failed", "interrupted", "cancelled", "canceled"}:
                         error = turn.get("error")
                         if isinstance(error, dict):
-                            message = error.get("message")
-                            if isinstance(message, str) and message.strip():
-                                tracker.error = message.strip()
+                            error_message = error.get("message")
+                            if isinstance(error_message, str) and error_message.strip():
+                                tracker.error = error_message.strip()
                             else:
                                 tracker.error = status or "turn failed"
                         else:
@@ -877,6 +888,7 @@ class CodexClient:
             "execCommandApproval",
         }:
             session_id = str(params.get("threadId") or params.get("conversationId") or "").strip()
+            rpc_request_id = request_id if isinstance(request_id, str | int) else request_key
             self._pending_server_requests[request_key] = _PendingInterruptRequest(
                 binding=InterruptRequestBinding(
                     request_id=request_key,
@@ -884,7 +896,7 @@ class CodexClient:
                     session_id=session_id,
                     created_at=time.monotonic(),
                 ),
-                rpc_request_id=request_id,
+                rpc_request_id=rpc_request_id,
                 params=params,
             )
             await self._enqueue_stream_event(
@@ -902,6 +914,7 @@ class CodexClient:
 
         if method == "item/tool/requestUserInput":
             session_id = str(params.get("threadId") or params.get("conversationId") or "").strip()
+            rpc_request_id = request_id if isinstance(request_id, str | int) else request_key
             self._pending_server_requests[request_key] = _PendingInterruptRequest(
                 binding=InterruptRequestBinding(
                     request_id=request_key,
@@ -909,7 +922,7 @@ class CodexClient:
                     session_id=session_id,
                     created_at=time.monotonic(),
                 ),
-                rpc_request_id=request_id,
+                rpc_request_id=rpc_request_id,
                 params=params,
             )
             await self._enqueue_stream_event(
@@ -1063,10 +1076,10 @@ class CodexClient:
         text: str,
         *,
         directory: str | None = None,
-        timeout_override: float | None | object = _UNSET,
+        timeout_override: float | None | _UnsetType = _UNSET,
     ) -> CodexMessage:
         timeout_seconds: float | None
-        if timeout_override is _UNSET:
+        if isinstance(timeout_override, _UnsetType):
             timeout_seconds = self._request_timeout
         elif timeout_override is None:
             timeout_seconds = None

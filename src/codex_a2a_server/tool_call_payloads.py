@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias
 
 from a2a._base import A2ABaseModel
 from pydantic import AliasChoices, Field, ValidationError, field_validator
@@ -38,8 +38,10 @@ def _normalized_status(value: Any) -> str | None:
 
 def _source_method_from_item_type(value: Any) -> ToolCallSourceMethod | None:
     normalized = _normalized_optional_string(value)
-    if normalized in {"commandExecution", "fileChange"}:
-        return cast(ToolCallSourceMethod, normalized)
+    if normalized == "commandExecution":
+        return "commandExecution"
+    if normalized == "fileChange":
+        return "fileChange"
     return None
 
 

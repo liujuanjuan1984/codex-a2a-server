@@ -87,6 +87,17 @@ def test_settings_reject_invalid_stream_ping_seconds():
     assert "A2A_STREAM_SSE_PING_SECONDS" in str(excinfo.value)
 
 
+def test_settings_reject_non_integer_stream_ping_seconds():
+    env = {
+        "A2A_BEARER_TOKEN": "test",
+        "A2A_STREAM_SSE_PING_SECONDS": "8.5",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        with pytest.raises(ValidationError) as excinfo:
+            Settings()
+    assert "A2A_STREAM_SSE_PING_SECONDS" in str(excinfo.value)
+
+
 def test_settings_reject_invalid_stream_idle_diagnostic_seconds():
     env = {
         "A2A_BEARER_TOKEN": "test",

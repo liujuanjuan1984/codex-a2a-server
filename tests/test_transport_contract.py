@@ -91,11 +91,11 @@ async def test_streaming_route_uses_configured_sse_ping_interval() -> None:
     route = _build_sse_streaming_route(
         method=stream_method,
         context_builder=context_builder,
-        sse_ping_seconds=7.5,
+        sse_ping_seconds=8,
     )
     response = await route(request)
 
-    assert response.ping_interval == 7.5
+    assert response.ping_interval == 8
 
 
 def test_create_app_propagates_stream_idle_diagnostic_setting(monkeypatch) -> None:

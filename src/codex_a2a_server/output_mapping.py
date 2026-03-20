@@ -10,6 +10,7 @@ from a2a.types import (
     Artifact,
     DataPart,
     Message,
+    Part,
     Role,
     TaskArtifactUpdateEvent,
     TextPart,
@@ -28,7 +29,7 @@ def build_assistant_message(
     return Message(
         message_id=message_id or str(uuid.uuid4()),
         role=Role.agent,
-        parts=[TextPart(text=text)],
+        parts=[Part(root=TextPart(text=text))],
         task_id=task_id,
         context_id=context_id,
     )
@@ -49,7 +50,7 @@ async def enqueue_artifact_update(
     normalized_last_chunk = True if last_chunk is True else None
     artifact = Artifact(
         artifact_id=artifact_id,
-        parts=[part],
+        parts=[Part(root=part)],
         metadata=dict(artifact_metadata) if artifact_metadata else None,
     )
     await event_queue.enqueue_event(

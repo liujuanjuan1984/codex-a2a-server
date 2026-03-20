@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import logging
 import secrets
 import time
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
 import uvicorn
@@ -17,7 +16,6 @@ from a2a.server.apps.rest.rest_adapter import (
     InvalidRequestError,
     RESTAdapter,
     ServerError,
-    rest_stream_error_handler,
 )
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
@@ -27,6 +25,7 @@ from a2a.types import (
     AgentInterface,
     AgentSkill,
     HTTPAuthSecurityScheme,
+    InternalError,
     SecurityScheme,
     TransportProtocol,
 )
@@ -104,39 +103,39 @@ def _build_sse_streaming_route(
     *,
     method: Callable[[Request, ServerCallContext], AsyncIterable[object]],
     context_builder: DefaultCallContextBuilder,
-    sse_ping_seconds: float,
+    sse_ping_seconds: int,
 ) -> Callable[[Request], Awaitable[EventSourceResponse]]:
-    @rest_stream_error_handler
-    async def route(request):
+    async def route(request: Request):
         try:
             await request.body()
+            call_context = context_builder.build(request)
+
+            async def event_generator(
+                stream: AsyncIterable[object],
+            ) -> AsyncIterator[dict[str, object]]:
+                async for item in stream:
+                    yield {"data": item}
+
+            return EventSourceResponse(
+                event_generator(method(request, call_context)),
+                ping=sse_ping_seconds,
+            )
         except (ValueError, RuntimeError, OSError) as e:
             raise ServerError(
                 error=InvalidRequestError(message=f"Failed to pre-consume request body: {e}")
             ) from e
-
-        call_context = context_builder.build(request)
-
-        async def event_generator(
-            stream: AsyncIterable[object],
-        ) -> AsyncIterator[dict[str, object]]:
-            async for item in stream:
-                yield {"data": item}
-
-        return EventSourceResponse(
-            event_generator(method(request, call_context)),
-            ping=float(sse_ping_seconds),
-        )
-
-    route.__signature__ = inspect.Signature(
-        parameters=[
-            inspect.Parameter(
-                "request",
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=Request,
+        except ServerError as e:
+            error = e.error or InternalError(message="Internal error due to unknown reason")
+            log_level = logging.ERROR if isinstance(error, InternalError) else logging.WARNING
+            logger.log(
+                log_level,
+                "Request error: Code=%s, Message='%s'%s",
+                error.code,
+                error.message,
+                ", Data=" + str(error.data) if error.data else "",
             )
-        ]
-    )
+            raise
+
     return route
 
 
@@ -603,7 +602,7 @@ def create_app(settings: Settings) -> FastAPI:
             request_omit_reason = f"non-json content-type={content_type or 'unknown'}"
         elif limit > 0 and content_length is None:
             request_omit_reason = f"missing content-length with limit={limit}"
-        elif limit > 0 and content_length > limit:
+        elif limit > 0 and content_length is not None and content_length > limit:
             request_omit_reason = f"content-length={content_length} exceeds limit={limit}"
         else:
             body = await _get_request_body(request)
@@ -724,13 +723,14 @@ def create_app(settings: Settings) -> FastAPI:
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
 
+    app_status_cls: Any | None = None
     try:
-        from sse_starlette.sse import AppStatus
+        from sse_starlette.sse import AppStatus as app_status_cls
     except ImportError:  # pragma: no cover - optional dependency
-        AppStatus = None
-    if AppStatus is not None:
-        AppStatus.should_exit = False
-        AppStatus.should_exit_event = None
+        pass
+    if app_status_cls is not None:
+        app_status_cls.should_exit = False
+        app_status_cls.should_exit_event = None
 
     return app
 
@@ -755,7 +755,7 @@ def _configure_logging(level: str) -> None:
 
 
 def main() -> None:
-    settings = Settings()
+    settings = Settings.from_env()
     app = create_app(settings)
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)
