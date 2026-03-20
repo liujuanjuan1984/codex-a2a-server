@@ -21,19 +21,7 @@ def _normalized_status(value: Any) -> str | None:
     normalized = _normalized_optional_string(value)
     if normalized is None:
         return None
-    aliases = {
-        "inProgress": "running",
-        "in_progress": "running",
-        "running": "running",
-        "completed": "completed",
-        "failed": "failed",
-        "error": "failed",
-        "errored": "failed",
-        "cancelled": "cancelled",
-        "canceled": "cancelled",
-        "pending": "pending",
-    }
-    return aliases.get(normalized, normalized)
+    return _TOOL_CALL_STATUS_ALIASES.get(normalized, normalized)
 
 
 def _source_method_from_item_type(value: Any) -> ToolCallSourceMethod | None:
@@ -120,6 +108,19 @@ class ToolCallOutputDeltaPayload(A2ABaseModel):
 
 
 ToolCallPayload: TypeAlias = ToolCallStatePayload | ToolCallOutputDeltaPayload
+
+_TOOL_CALL_STATUS_ALIASES: dict[str, str] = {
+    "inProgress": "running",
+    "in_progress": "running",
+    "running": "running",
+    "completed": "completed",
+    "failed": "failed",
+    "error": "failed",
+    "errored": "failed",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+    "pending": "pending",
+}
 
 
 def serialize_tool_call_payload(payload: ToolCallPayload) -> str:
@@ -283,3 +284,55 @@ def _build_output_delta_payload(
 
 def as_tool_call_payload(payload: ToolCallPayload) -> dict[str, Any]:
     return payload.model_dump(mode="json", by_alias=False, exclude_none=True)
+
+
+def build_tool_call_payload_contract_params() -> dict[str, Any]:
+    return {
+        "a2a_part_type": "DataPart",
+        "payload_type": "object",
+        "discriminator": {
+            "field": "kind",
+            "allowed_values": ["state", "output_delta"],
+        },
+        "aliases": {
+            "source_method": ["sourceMethod"],
+            "call_id": ["callId", "callID"],
+            "output_delta": ["outputDelta"],
+        },
+        "status_aliases": dict(_TOOL_CALL_STATUS_ALIASES),
+        "variants": {
+            "state": {
+                "required_fields": ["kind"],
+                "optional_fields": [
+                    "source_method",
+                    "call_id",
+                    "tool",
+                    "status",
+                    "title",
+                    "subtitle",
+                    "input",
+                    "output",
+                    "error",
+                ],
+                "suppressed_when_only_fields": ["kind"],
+            },
+            "output_delta": {
+                "required_fields": ["kind", "output_delta"],
+                "optional_fields": [
+                    "source_method",
+                    "call_id",
+                    "tool",
+                    "status",
+                ],
+                "output_delta_rules": {
+                    "type": "string",
+                    "empty_string": "rejected",
+                    "preserve_verbatim": True,
+                },
+            },
+        },
+        "suppressed_payloads": [
+            "legacy_stringified_json",
+            "unrecognized_objects_without_explicit_kind",
+        ],
+    }

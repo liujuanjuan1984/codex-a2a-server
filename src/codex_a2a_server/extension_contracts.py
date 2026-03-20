@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .profile import RuntimeProfile
+from .tool_call_payloads import build_tool_call_payload_contract_params
 
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:codex-a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:codex-a2a:wire-contract/v1"
@@ -479,6 +480,11 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "session_metadata_field": SHARED_SESSION_METADATA_FIELD,
         "usage_metadata_field": SHARED_USAGE_METADATA_FIELD,
         "block_types": ["text", "reasoning", "tool_call"],
+        "block_part_types": {
+            "text": "TextPart",
+            "reasoning": "TextPart",
+            "tool_call": "DataPart",
+        },
         "stream_fields": {
             "block_type": f"{SHARED_STREAM_METADATA_FIELD}.block_type",
             "source": f"{SHARED_STREAM_METADATA_FIELD}.source",
@@ -486,6 +492,10 @@ def build_streaming_extension_params() -> dict[str, Any]:
             "event_id": f"{SHARED_STREAM_METADATA_FIELD}.event_id",
             "sequence": f"{SHARED_STREAM_METADATA_FIELD}.sequence",
             "role": f"{SHARED_STREAM_METADATA_FIELD}.role",
+        },
+        "session_fields": {
+            "id": f"{SHARED_SESSION_METADATA_FIELD}.id",
+            "title": f"{SHARED_SESSION_METADATA_FIELD}.title",
         },
         "interrupt_fields": {
             "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
@@ -498,8 +508,13 @@ def build_streaming_extension_params() -> dict[str, Any]:
             "input_tokens": f"{SHARED_USAGE_METADATA_FIELD}.input_tokens",
             "output_tokens": f"{SHARED_USAGE_METADATA_FIELD}.output_tokens",
             "total_tokens": f"{SHARED_USAGE_METADATA_FIELD}.total_tokens",
+            "reasoning_tokens": f"{SHARED_USAGE_METADATA_FIELD}.reasoning_tokens",
+            "cache_read_tokens": f"{SHARED_USAGE_METADATA_FIELD}.cache_tokens.read_tokens",
+            "cache_write_tokens": f"{SHARED_USAGE_METADATA_FIELD}.cache_tokens.write_tokens",
             "cost": f"{SHARED_USAGE_METADATA_FIELD}.cost",
+            "raw": f"{SHARED_USAGE_METADATA_FIELD}.raw",
         },
+        "tool_call_payload_contract": build_tool_call_payload_contract_params(),
     }
 
 
