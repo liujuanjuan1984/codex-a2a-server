@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
@@ -69,6 +69,10 @@ __all__ = [
     "extract_stream_part_id",
     "extract_stream_session_id",
 ]
+
+
+async def _next_stream_event(stream_iter: AsyncIterator[dict[str, Any]]) -> dict[str, Any]:
+    return await anext(stream_iter)
 
 
 @dataclass
@@ -314,7 +318,7 @@ async def consume_codex_stream(
                 pending_event_task: asyncio.Task[dict[str, Any]] | None = None
                 while not stop_event.is_set():
                     if pending_event_task is None:
-                        pending_event_task = asyncio.create_task(anext(stream_iter))
+                        pending_event_task = asyncio.create_task(_next_stream_event(stream_iter))
                     wait_timeout = seconds_until_buffer_flush()
                     idle_timeout = seconds_until_idle_diagnostic()
                     if idle_timeout is not None:
@@ -438,7 +442,7 @@ async def consume_codex_stream(
                         if state.role in {"user", "system"}:
                             continue
                         if state.block_type == BlockType.TOOL_CALL:
-                            chunks = tool_delta_chunks(
+                            delta_event_chunks = tool_delta_chunks(
                                 state=state,
                                 delta_value=delta,
                                 message_id=message_id,
@@ -447,14 +451,14 @@ async def consume_codex_stream(
                                 session_id=session_id,
                             )
                         else:
-                            chunks = delta_chunks(
+                            delta_event_chunks = delta_chunks(
                                 state=state,
                                 delta_text=delta,
                                 message_id=message_id,
                                 source="delta_event",
                             )
-                        if chunks:
-                            await emit_chunks(chunks)
+                        if delta_event_chunks:
+                            await emit_chunks(delta_event_chunks)
                         continue
 
                     role = extract_stream_role(part, props)
