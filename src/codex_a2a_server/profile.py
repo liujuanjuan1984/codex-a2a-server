@@ -109,9 +109,7 @@ class RuntimeProfile:
             "interrupt_request_ttl_seconds": self.interrupts.request_ttl_seconds,
             "session_shell_enabled": self.session_shell.enabled,
             "single_tenant": deployment["single_tenant"],
-            "shared_workspace_across_consumers": deployment[
-                "shared_workspace_across_consumers"
-            ],
+            "shared_workspace_across_consumers": deployment["shared_workspace_across_consumers"],
             "streaming_enabled": self.service_features.streaming["enabled"],
             "tenant_isolation": deployment["tenant_isolation"],
             "runtime_features": runtime_features,
@@ -160,9 +158,7 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
             streaming={"enabled": True, "availability": "always"},
             health_endpoint={
                 "enabled": settings.a2a_enable_health_endpoint,
-                "availability": (
-                    "enabled" if settings.a2a_enable_health_endpoint else "disabled"
-                ),
+                "availability": ("enabled" if settings.a2a_enable_health_endpoint else "disabled"),
                 "toggle": "A2A_ENABLE_HEALTH_ENDPOINT",
             },
         ),
