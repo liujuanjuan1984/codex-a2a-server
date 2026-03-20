@@ -7,6 +7,9 @@ from typing import Any
 from a2a.types import DataPart, TextPart
 
 from .output_mapping import merge_token_usage
+from .runtime_output_contracts import (
+    build_stream_artifact_metadata as build_runtime_stream_metadata,
+)
 
 _STREAM_TEXT_FLUSH_CHARS = 120
 _STREAM_TEXT_FLUSH_SECONDS = 0.2
@@ -219,16 +222,11 @@ def build_stream_artifact_metadata(
     sequence: int | None = None,
     event_id: str | None = None,
 ) -> dict[str, Any]:
-    stream_meta: dict[str, Any] = {
-        "block_type": block_type.value,
-        "source": source,
-    }
-    if message_id:
-        stream_meta["message_id"] = message_id
-    if role:
-        stream_meta["role"] = role
-    if sequence is not None:
-        stream_meta["sequence"] = sequence
-    if event_id:
-        stream_meta["event_id"] = event_id
-    return {"shared": {"stream": stream_meta}}
+    return build_runtime_stream_metadata(
+        block_type=block_type.value,
+        source=source,
+        message_id=message_id,
+        role=role,
+        sequence=sequence,
+        event_id=event_id,
+    )

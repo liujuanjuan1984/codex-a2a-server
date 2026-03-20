@@ -110,12 +110,52 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
     assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
+    assert streaming.params["session_metadata_field"] == "metadata.shared.session"
     assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
+    assert streaming.params["block_part_types"] == {
+        "text": "TextPart",
+        "reasoning": "TextPart",
+        "tool_call": "DataPart",
+    }
     assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
+    assert streaming.params["status_stream_fields"]["event_id"] == "metadata.shared.stream.event_id"
+    assert streaming.params["session_fields"]["title"] == "metadata.shared.session.title"
     assert streaming.params["interrupt_fields"]["phase"] == "metadata.shared.interrupt.phase"
     assert (
         streaming.params["interrupt_fields"]["resolution"] == "metadata.shared.interrupt.resolution"
     )
+    assert (
+        streaming.params["usage_fields"]["reasoning_tokens"]
+        == "metadata.shared.usage.reasoning_tokens"
+    )
+    assert (
+        streaming.params["usage_fields"]["cache_read_tokens"]
+        == "metadata.shared.usage.cache_tokens.read_tokens"
+    )
+    assert streaming.params["usage_fields"]["raw"] == "metadata.shared.usage.raw"
+    assert streaming.params["artifact_stream_contract"]["required_fields"] == [
+        "block_type",
+        "source",
+    ]
+    assert streaming.params["status_stream_contract"]["required_fields"] == ["source"]
+    assert streaming.params["session_contract"]["required_fields"] == ["id"]
+    assert streaming.params["interrupt_contract"]["open_object_fields"] == ["details"]
+    assert streaming.params["usage_contract"]["nested_objects"]["cache_tokens"] == {
+        "required_fields": [],
+        "optional_fields": ["read_tokens", "write_tokens"],
+    }
+    tool_call_contract = streaming.params["tool_call_payload_contract"]
+    assert tool_call_contract["a2a_part_type"] == "DataPart"
+    assert tool_call_contract["discriminator"] == {
+        "field": "kind",
+        "allowed_values": ["state", "output_delta"],
+    }
+    assert tool_call_contract["variants"]["state"]["suppressed_when_only_fields"] == ["kind"]
+    assert tool_call_contract["variants"]["output_delta"]["output_delta_rules"] == {
+        "type": "string",
+        "empty_string": "rejected",
+        "preserve_verbatim": True,
+    }
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     assert session_query.params["profile"] == profile

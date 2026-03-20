@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from codex_a2a_server.tool_call_payloads import (
     as_tool_call_payload,
+    build_tool_call_payload_contract_params,
     normalize_tool_call_payload,
     tool_call_output_delta_payload_from_notification,
     tool_call_state_payload_from_item,
@@ -141,3 +142,26 @@ def test_tool_call_state_payload_from_item_summarizes_file_change_paths() -> Non
             "change_count": 2,
         },
     }
+
+
+def test_tool_call_payload_contract_declares_machine_readable_variants() -> None:
+    contract = build_tool_call_payload_contract_params()
+
+    assert contract["aliases"]["call_id"] == ["callId", "callID"]
+    assert contract["status_aliases"]["inProgress"] == "running"
+    assert contract["variants"]["state"]["optional_fields"] == [
+        "source_method",
+        "call_id",
+        "tool",
+        "status",
+        "title",
+        "subtitle",
+        "input",
+        "output",
+        "error",
+    ]
+    assert contract["variants"]["output_delta"]["required_fields"] == [
+        "kind",
+        "output_delta",
+    ]
+    assert "legacy_stringified_json" in contract["suppressed_payloads"]

@@ -25,6 +25,11 @@ from tests.helpers import DummyEventQueue
 from tests.test_request_handler import _make_message_send_params
 
 
+async def _empty_async_stream() -> None:
+    if asyncio.current_task() is None:
+        yield b""
+
+
 @pytest.fixture(autouse=True)
 def reset_metrics_state() -> Iterator[None]:
     reset_metrics()
@@ -147,8 +152,8 @@ async def test_streaming_retry_metric_increments_once_per_retry(monkeypatch) -> 
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("boom")
-            if False:
-                yield {}
+            async for event in _empty_async_stream():
+                yield event
 
     async def _fast_sleep(_seconds: float) -> None:
         return None

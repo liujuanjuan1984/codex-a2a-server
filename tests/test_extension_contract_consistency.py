@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -25,6 +27,19 @@ from codex_a2a_server.extension_contracts import (
 from codex_a2a_server.profile import build_runtime_profile
 from tests.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.helpers import make_settings
+
+
+def _extract_heading_section(markdown: str, heading: str) -> str:
+    marker = f"## {heading}\n"
+    start = markdown.find(marker)
+    if start < 0:
+        raise AssertionError(f"Missing heading {heading!r} in docs/guide.md.")
+
+    start += len(marker)
+    end = markdown.find("\n## ", start)
+    if end < 0:
+        end = len(markdown)
+    return markdown[start:end]
 
 
 def _example_params_include_field(payload: object, dotted_field: str) -> bool:
@@ -248,6 +263,48 @@ def test_openapi_and_agent_card_extension_contracts_match() -> None:
     assert (
         post_contract["compatibility_profile"]
         == ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI].params
+    )
+
+
+def test_guide_mentions_declared_streaming_contract_fields() -> None:
+    guide_text = Path("docs/guide.md").read_text()
+    streaming_contract = build_streaming_extension_params()
+
+    required_doc_fragments = [
+        streaming_contract["artifact_metadata_field"],
+        streaming_contract["session_metadata_field"],
+        streaming_contract["session_fields"]["title"],
+        streaming_contract["interrupt_fields"]["phase"],
+        streaming_contract["interrupt_fields"]["resolution"],
+        streaming_contract["usage_fields"]["reasoning_tokens"],
+        streaming_contract["usage_fields"]["cache_read_tokens"],
+        streaming_contract["usage_fields"]["raw"],
+        "tool_call_payload_contract",
+    ]
+
+    for fragment in required_doc_fragments:
+        assert fragment in guide_text, (
+            f"docs/guide.md is missing streaming contract fragment {fragment!r}."
+        )
+
+
+def test_guide_environment_variables_match_settings_aliases() -> None:
+    import re
+
+    from codex_a2a_server.config import Settings
+
+    guide_text = Path("docs/guide.md").read_text()
+    env_section = _extract_heading_section(guide_text, "Environment Variables")
+    documented_names = set(re.findall(r"`((?:A2A|CODEX)_[A-Z0-9_]+)`", env_section))
+
+    setting_aliases = {
+        field.alias
+        for field in Settings.model_fields.values()
+        if isinstance(field.alias, str) and field.alias.startswith(("A2A_", "CODEX_"))
+    }
+
+    assert documented_names == setting_aliases, (
+        "docs/guide.md Environment Variables drifted from Settings aliases."
     )
 
 

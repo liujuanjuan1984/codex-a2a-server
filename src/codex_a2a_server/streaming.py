@@ -25,6 +25,10 @@ from .output_mapping import (
     enqueue_artifact_update,
     extract_token_usage,
 )
+from .runtime_output_contracts import (
+    build_interrupt_metadata,
+    build_status_stream_metadata,
+)
 from .stream_chunks import (
     delta_chunks,
     extract_event_session_id,
@@ -278,14 +282,6 @@ async def consume_codex_stream(
     ) -> None:
         await flush_buffered_text_chunk()
         sequence = stream_state.next_sequence()
-        interrupt_payload: dict[str, Any] = {
-            "request_id": request_id,
-            "type": interrupt_type,
-            "phase": phase,
-            "details": dict(details),
-        }
-        if resolution is not None:
-            interrupt_payload["resolution"] = resolution
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
@@ -294,13 +290,19 @@ async def consume_codex_stream(
                 final=False,
                 metadata=build_output_metadata(
                     session_id=session_id,
-                    stream={
-                        "message_id": stream_state.resolve_message_id(None),
-                        "event_id": stream_state.build_event_id(sequence),
-                        "source": "interrupt",
-                        "sequence": sequence,
-                    },
-                    interrupt=interrupt_payload,
+                    stream=build_status_stream_metadata(
+                        message_id=stream_state.resolve_message_id(None),
+                        event_id=stream_state.build_event_id(sequence),
+                        source="interrupt",
+                        sequence=sequence,
+                    ),
+                    interrupt=build_interrupt_metadata(
+                        request_id=request_id,
+                        interrupt_type=interrupt_type,
+                        phase=phase,
+                        details=details,
+                        resolution=resolution,
+                    ),
                 ),
             )
         )

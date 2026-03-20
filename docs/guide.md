@@ -173,6 +173,8 @@ Current implementation note:
 - `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
 - `A2A_DOCUMENTATION_URL`: optional URL exposed via Agent Card
   `documentationUrl`
+- `A2A_ALLOW_DIRECTORY_OVERRIDE`: allow `metadata.codex.directory` overrides
+  within the configured workspace boundary, default `true`
 - `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
   `(identity, contextId) -> Codex session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
@@ -305,10 +307,17 @@ described first in [README.md](../README.md) and above in this guide.
   `TaskArtifactUpdateEvent` and then `TaskStatusUpdateEvent(final=true)`.
 - Stream artifacts carry `artifact.metadata.shared.stream.block_type` with
   values `text`, `reasoning`, and `tool_call`.
+- The published `urn:a2a:stream-hints/v1` contract also declares the emitted
+  A2A part type per block: `text` and `reasoning` use `TextPart`, while
+  `tool_call` uses `DataPart`.
 - All chunks share one stream artifact ID and preserve original timeline via
   `artifact.metadata.shared.stream.sequence`. Timeline identity fields such as
   `message_id`, `event_id`, and `source` are emitted under
   `metadata.shared.stream`.
+- Session projections are normalized under `metadata.shared.session`, with
+  `id` as the canonical field and optional `title` when the upstream surface
+  provides one. The corresponding leaf fields are
+  `metadata.shared.session.id` and `metadata.shared.session.title`.
 - A final snapshot is emitted only when stream chunks did not already produce
   the same final text.
 - Stream routing is schema-first: the service classifies chunks primarily by
@@ -327,7 +336,10 @@ described first in [README.md](../README.md) and above in this guide.
   boundaries.
 - Final status event metadata may include normalized token usage at
   `metadata.shared.usage` with fields like `input_tokens`, `output_tokens`,
-  `total_tokens`, and optional `cost`.
+  `total_tokens`, optional `metadata.shared.usage.reasoning_tokens`,
+  `metadata.shared.usage.cache_tokens.read_tokens`,
+  `metadata.shared.usage.cache_tokens.write_tokens`,
+  `metadata.shared.usage.raw`, and optional `cost`.
 - Interrupt lifecycle is explicit:
   - asked events (`permission.asked` / `question.asked`) are mapped to
     `TaskStatusUpdateEvent(final=false, state=input-required)` with
@@ -350,7 +362,8 @@ described first in [README.md](../README.md) and above in this guide.
 
 ### Tool Call Payload Contract
 
-- `tool_call` payload contract:
+- The same shape is published in the machine-readable streaming extension
+  contract under `tool_call_payload_contract`.
 
 | `kind` | Required fields | Optional fields | Notes |
 | --- | --- | --- | --- |
@@ -361,15 +374,15 @@ described first in [README.md](../README.md) and above in this guide.
 `item/completed` are normalized into `kind=state`; `item/*/outputDelta`
 notifications are normalized into `kind=output_delta`.
 
-  Examples:
+Examples:
 
-  ```json
-  {"kind":"state","tool":"bash","call_id":"call-1","status":"running"}
-  ```
+```json
+{"kind":"state","tool":"bash","call_id":"call-1","status":"running"}
+```
 
-  ```json
-  {"kind":"output_delta","source_method":"commandExecution","tool":"bash","call_id":"call-1","status":"running","output_delta":"Passed\n"}
-  ```
+```json
+{"kind":"output_delta","source_method":"commandExecution","tool":"bash","call_id":"call-1","status":"running","output_delta":"Passed\n"}
+```
 ### Directory and Error Handling
 
 - For validation failures, missing context (`task_id`/`context_id`), or

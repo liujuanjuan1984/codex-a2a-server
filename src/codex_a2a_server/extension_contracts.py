@@ -4,6 +4,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .profile import RuntimeProfile
+from .runtime_output_contracts import (
+    build_artifact_stream_contract_params,
+    build_interrupt_contract_params,
+    build_session_contract_params,
+    build_status_stream_contract_params,
+    build_usage_contract_params,
+)
+from .tool_call_payloads import build_tool_call_payload_contract_params
 
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:codex-a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:codex-a2a:wire-contract/v1"
@@ -12,7 +20,6 @@ STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:codex-a2a:codex-session-query/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
-SHARED_METADATA_NAMESPACE = "shared"
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
 SHARED_STREAM_METADATA_FIELD = "metadata.shared.stream"
@@ -472,6 +479,21 @@ def build_session_binding_extension_params(
 
 
 def build_streaming_extension_params() -> dict[str, Any]:
+    artifact_stream_contract = build_artifact_stream_contract_params(
+        field_path=SHARED_STREAM_METADATA_FIELD,
+    )
+    status_stream_contract = build_status_stream_contract_params(
+        field_path=SHARED_STREAM_METADATA_FIELD,
+    )
+    interrupt_contract = build_interrupt_contract_params(
+        field_path=SHARED_INTERRUPT_METADATA_FIELD,
+    )
+    session_contract = build_session_contract_params(
+        field_path=SHARED_SESSION_METADATA_FIELD,
+    )
+    usage_contract = build_usage_contract_params(
+        field_path=SHARED_USAGE_METADATA_FIELD,
+    )
     return {
         "artifact_metadata_field": SHARED_STREAM_METADATA_FIELD,
         "status_metadata_field": SHARED_STREAM_METADATA_FIELD,
@@ -479,27 +501,22 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "session_metadata_field": SHARED_SESSION_METADATA_FIELD,
         "usage_metadata_field": SHARED_USAGE_METADATA_FIELD,
         "block_types": ["text", "reasoning", "tool_call"],
-        "stream_fields": {
-            "block_type": f"{SHARED_STREAM_METADATA_FIELD}.block_type",
-            "source": f"{SHARED_STREAM_METADATA_FIELD}.source",
-            "message_id": f"{SHARED_STREAM_METADATA_FIELD}.message_id",
-            "event_id": f"{SHARED_STREAM_METADATA_FIELD}.event_id",
-            "sequence": f"{SHARED_STREAM_METADATA_FIELD}.sequence",
-            "role": f"{SHARED_STREAM_METADATA_FIELD}.role",
+        "block_part_types": {
+            "text": "TextPart",
+            "reasoning": "TextPart",
+            "tool_call": "DataPart",
         },
-        "interrupt_fields": {
-            "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
-            "type": f"{SHARED_INTERRUPT_METADATA_FIELD}.type",
-            "phase": f"{SHARED_INTERRUPT_METADATA_FIELD}.phase",
-            "resolution": f"{SHARED_INTERRUPT_METADATA_FIELD}.resolution",
-            "details": f"{SHARED_INTERRUPT_METADATA_FIELD}.details",
-        },
-        "usage_fields": {
-            "input_tokens": f"{SHARED_USAGE_METADATA_FIELD}.input_tokens",
-            "output_tokens": f"{SHARED_USAGE_METADATA_FIELD}.output_tokens",
-            "total_tokens": f"{SHARED_USAGE_METADATA_FIELD}.total_tokens",
-            "cost": f"{SHARED_USAGE_METADATA_FIELD}.cost",
-        },
+        "stream_fields": dict(artifact_stream_contract["field_paths"]),
+        "status_stream_fields": dict(status_stream_contract["field_paths"]),
+        "session_fields": dict(session_contract["field_paths"]),
+        "interrupt_fields": dict(interrupt_contract["field_paths"]),
+        "usage_fields": dict(usage_contract["field_paths"]),
+        "artifact_stream_contract": artifact_stream_contract,
+        "status_stream_contract": status_stream_contract,
+        "session_contract": session_contract,
+        "interrupt_contract": interrupt_contract,
+        "usage_contract": usage_contract,
+        "tool_call_payload_contract": build_tool_call_payload_contract_params(),
     }
 
 

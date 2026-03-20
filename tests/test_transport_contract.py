@@ -13,6 +13,11 @@ from codex_a2a_server.app import _build_sse_streaming_route, build_agent_card, c
 from tests.helpers import DummyChatCodexClient, make_settings
 
 
+async def _empty_async_stream():
+    if asyncio.current_task() is None:
+        yield {}
+
+
 def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
     card = build_agent_card(make_settings(a2a_bearer_token="test-token"))
 
@@ -86,8 +91,8 @@ async def test_streaming_route_uses_configured_sse_ping_interval() -> None:
     )
 
     async def stream_method(_request: Request, _context):
-        if False:
-            yield {}
+        async for item in _empty_async_stream():
+            yield item
 
     route = _build_sse_streaming_route(
         method=stream_method,

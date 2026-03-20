@@ -222,13 +222,6 @@ class DummyChatCodexClient:
         for _ in ():
             yield {}
 
-    def remember_interrupt_request(self, *, request_id: str, session_id: str) -> None:
-        del request_id, session_id
-
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
-        del request_id
-        return None
-
     def discard_interrupt_request(self, request_id: str) -> None:
         del request_id
 

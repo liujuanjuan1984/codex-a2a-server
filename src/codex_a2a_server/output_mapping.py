@@ -16,7 +16,7 @@ from a2a.types import (
     TextPart,
 )
 
-from .extension_contracts import SHARED_METADATA_NAMESPACE
+from .runtime_output_contracts import build_output_metadata as build_runtime_output_metadata
 
 
 def build_assistant_message(
@@ -74,25 +74,14 @@ def build_output_metadata(
     interrupt: Mapping[str, Any] | None = None,
     codex_private: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    metadata: dict[str, Any] = {}
-    shared_meta: dict[str, Any] = {}
-
-    if session_id:
-        session_meta: dict[str, Any] = {"id": session_id}
-        if session_title is not None:
-            session_meta["title"] = session_title
-        shared_meta["session"] = session_meta
-    if usage is not None:
-        shared_meta["usage"] = dict(usage)
-    if stream is not None:
-        shared_meta["stream"] = dict(stream)
-    if interrupt is not None:
-        shared_meta["interrupt"] = dict(interrupt)
-    if shared_meta:
-        metadata[SHARED_METADATA_NAMESPACE] = shared_meta
-    if codex_private:
-        metadata["codex"] = dict(codex_private)
-    return metadata or None
+    return build_runtime_output_metadata(
+        session_id=session_id,
+        session_title=session_title,
+        usage=usage,
+        stream=stream,
+        interrupt=interrupt,
+        codex_private=codex_private,
+    )
 
 
 def extract_token_usage(payload: Any) -> dict[str, Any] | None:

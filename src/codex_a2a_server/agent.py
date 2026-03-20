@@ -25,7 +25,6 @@ from a2a.types import (
 )
 
 from .codex_client import CodexClient
-from .extension_contracts import SHARED_METADATA_NAMESPACE
 from .output_mapping import (
     build_assistant_message,
     build_history,
@@ -34,6 +33,7 @@ from .output_mapping import (
     extract_token_usage,
     merge_token_usage,
 )
+from .runtime_output_contracts import SHARED_METADATA_NAMESPACE, build_status_stream_metadata
 from .stream_state import BlockType, StreamOutputState, build_stream_artifact_metadata
 from .streaming import consume_codex_stream
 
@@ -367,11 +367,11 @@ class CodexAgentExecutor(AgentExecutor):
                         metadata=build_output_metadata(
                             session_id=response.session_id,
                             usage=resolved_token_usage,
-                            stream={
-                                "message_id": resolved_message_id,
-                                "event_id": f"{stream_state.event_id_namespace}:status",
-                                "source": "status",
-                            },
+                            stream=build_status_stream_metadata(
+                                message_id=resolved_message_id,
+                                event_id=f"{stream_state.event_id_namespace}:status",
+                                source="status",
+                            ),
                         ),
                     )
                 )

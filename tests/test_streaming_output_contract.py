@@ -3,11 +3,12 @@ import logging
 from typing import Any
 
 import pytest
-from a2a.types import TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 from codex_a2a_server import streaming as streaming_module
 from codex_a2a_server.agent import CodexAgentExecutor
 from codex_a2a_server.codex_client import CodexMessage
+from codex_a2a_server.extension_contracts import build_streaming_extension_params
 from codex_a2a_server.streaming import (
     extract_event_session_id,
     extract_interrupt_resolved_event,
@@ -44,7 +45,6 @@ class DummyStreamingClient:
         self.max_in_flight_send = 0
         self.stream_timeout = None
         self.directory = None
-        self._interrupt_sessions: dict[str, str] = {}
         self.settings = make_settings(
             a2a_bearer_token="test",
         )
@@ -87,15 +87,6 @@ class DummyStreamingClient:
                 break
             await asyncio.sleep(delay)
             yield event
-
-    def remember_interrupt_request(self, *, request_id: str, session_id: str) -> None:
-        self._interrupt_sessions[request_id] = session_id
-
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
-        return self._interrupt_sessions.get(request_id)
-
-    def discard_interrupt_request(self, request_id: str) -> None:
-        self._interrupt_sessions.pop(request_id, None)
 
 
 def _event(
@@ -307,6 +298,48 @@ def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
 
 def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
     return _status_shared_meta(event)["interrupt"]
+
+
+def _assert_contract_shape(payload: dict[str, Any], contract: dict[str, Any]) -> None:
+    required_fields = set(contract.get("required_fields", []))
+    optional_fields = set(contract.get("optional_fields", []))
+    nested_objects = contract.get("nested_objects", {})
+    open_object_fields = set(contract.get("open_object_fields", []))
+
+    assert required_fields <= set(payload)
+    assert set(payload) <= (required_fields | optional_fields)
+
+    for field_name, nested_contract in nested_objects.items():
+        if field_name not in payload:
+            continue
+        nested_payload = payload[field_name]
+        assert isinstance(nested_payload, dict)
+        _assert_contract_shape(nested_payload, nested_contract)
+
+    for field_name in open_object_fields:
+        if field_name in payload:
+            assert isinstance(payload[field_name], dict)
+
+
+def _assert_tool_call_payload_contract(payload: dict[str, Any], contract: dict[str, Any]) -> None:
+    discriminator_field = contract["discriminator"]["field"]
+    kind = payload[discriminator_field]
+    assert kind in contract["discriminator"]["allowed_values"]
+    _assert_contract_shape(payload, contract["variants"][kind])
+
+
+def _assert_shared_metadata_matches_streaming_contract(metadata: dict[str, Any]) -> None:
+    streaming_contract = build_streaming_extension_params()
+    shared = metadata["shared"]
+
+    if "session" in shared:
+        _assert_contract_shape(shared["session"], streaming_contract["session_contract"])
+    if "usage" in shared:
+        _assert_contract_shape(shared["usage"], streaming_contract["usage_contract"])
+    if "stream" in shared:
+        _assert_contract_shape(shared["stream"], streaming_contract["status_stream_contract"])
+    if "interrupt" in shared:
+        _assert_contract_shape(shared["interrupt"], streaming_contract["interrupt_contract"])
 
 
 @pytest.mark.asyncio
@@ -1879,3 +1912,110 @@ async def test_streaming_logs_completion_observed_in_close_diagnostics(
         "Codex event stream closed" in message and "completion_observed=True" in message
         for message in messages
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_output_metadata_matches_declared_streaming_contract() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _tool_call_update_event(
+                session_id="ses-1",
+                part_id="prt-tool-contract",
+                call_id="call-1",
+                tool="bash",
+                status="running",
+                payload={
+                    "kind": "output_delta",
+                    "source_method": "commandExecution",
+                    "call_id": "call-1",
+                    "tool": "bash",
+                    "status": "running",
+                    "output_delta": "pytest ...\n",
+                },
+            ),
+            _permission_asked_event(session_id="ses-1", request_id="perm-contract-1"),
+            _permission_replied_event(session_id="ses-1", request_id="perm-contract-1"),
+            _step_finish_usage_event(
+                session_id="ses-1",
+                input_tokens=3,
+                output_tokens=2,
+                total_tokens=5,
+                cost=0.001,
+            ),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+        response_raw={
+            "info": {
+                "tokens": {
+                    "input": 3,
+                    "output": 2,
+                    "total": 5,
+                    "reasoning": 0,
+                    "cache": {"read": 1, "write": 0},
+                },
+                "cost": 0.001,
+            }
+        },
+    )
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-contract", context_id="ctx-contract", text="go"),
+        queue,
+    )
+
+    streaming_contract = build_streaming_extension_params()
+
+    for event in _artifact_updates(queue):
+        _assert_contract_shape(
+            _artifact_stream_meta(event),
+            streaming_contract["artifact_stream_contract"],
+        )
+        if _artifact_stream_meta(event)["block_type"] == "tool_call":
+            _assert_tool_call_payload_contract(
+                _part_data(event),
+                streaming_contract["tool_call_payload_contract"],
+            )
+
+    for event in queue.events:
+        if isinstance(event, TaskStatusUpdateEvent) and event.metadata is not None:
+            _assert_shared_metadata_matches_streaming_contract(event.metadata)
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_task_metadata_matches_declared_output_contract() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[],
+        response_text="final answer",
+        response_raw={
+            "info": {
+                "tokens": {
+                    "input": 4,
+                    "output": 6,
+                    "total": 10,
+                    "reasoning": 1,
+                    "cache": {"read": 2, "write": 0},
+                },
+                "cost": 0.123,
+            }
+        },
+    )
+    executor = CodexAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: False
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-non-stream-contract",
+            context_id="ctx-non-stream",
+            text="go",
+        ),
+        queue,
+    )
+
+    task = next(event for event in queue.events if isinstance(event, Task))
+    assert task.metadata is not None
+    _assert_shared_metadata_matches_streaming_contract(task.metadata)
