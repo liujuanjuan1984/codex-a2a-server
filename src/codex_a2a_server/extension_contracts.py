@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .profile import COMPATIBILITY_PROFILE_ID
+
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:codex-a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:codex-a2a:wire-contract/v1"
 SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
@@ -221,7 +223,6 @@ WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
     "supported_methods",
     "protocol_version",
 )
-COMPATIBILITY_PROFILE_ID = "codex-a2a-single-tenant-coding-v1"
 
 
 def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
@@ -290,6 +291,7 @@ def build_wire_contract_extension_params(
 def build_compatibility_profile_params(
     *,
     protocol_version: str,
+    runtime_profile: dict[str, Any] | None = None,
     session_shell_enabled: bool,
 ) -> dict[str, Any]:
     active_session_query_methods = [
@@ -415,6 +417,7 @@ def build_compatibility_profile_params(
                 "declared profile and current extension contracts before calling it."
             ),
         ],
+        "runtime_profile": dict(runtime_profile) if runtime_profile else {},
     }
 
 
@@ -436,7 +439,7 @@ def _build_method_contract_params(
 
 def build_session_binding_extension_params(
     *,
-    deployment_context: dict[str, str | bool | int],
+    deployment_context: dict[str, Any],
     directory_override_enabled: bool,
 ) -> dict[str, Any]:
     return {
@@ -498,7 +501,7 @@ def build_streaming_extension_params() -> dict[str, Any]:
 
 def build_session_query_extension_params(
     *,
-    deployment_context: dict[str, str | bool | int],
+    deployment_context: dict[str, Any],
     session_shell_enabled: bool,
 ) -> dict[str, Any]:
     active_method_contracts = {
@@ -605,7 +608,7 @@ def build_session_query_extension_params(
 
 def build_interrupt_callback_extension_params(
     *,
-    deployment_context: dict[str, str | bool | int],
+    deployment_context: dict[str, Any],
 ) -> dict[str, Any]:
     method_contracts: dict[str, Any] = {}
     for contract in INTERRUPT_CALLBACK_METHOD_CONTRACTS.values():

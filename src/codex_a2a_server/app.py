@@ -64,6 +64,7 @@ from .logging_context import (
     set_correlation_id,
 )
 from .openapi_contracts import patch_openapi_contract
+from .profile import build_runtime_profile
 from .request_handler import CodexRequestHandler
 
 logger = logging.getLogger(__name__)
@@ -139,18 +140,9 @@ def _build_sse_streaming_route(
     return route
 
 
-def _build_deployment_context(settings: Settings) -> dict[str, str | bool | int]:
-    context: dict[str, str | bool | int] = {
-        "deployment_profile": "single_tenant_shared_workspace",
-        "allow_directory_override": settings.a2a_allow_directory_override,
-        "health_endpoint_enabled": settings.a2a_enable_health_endpoint,
-        "interrupt_request_ttl_seconds": settings.a2a_interrupt_request_ttl_seconds,
-        "session_shell_enabled": settings.a2a_enable_session_shell,
-        "single_tenant": True,
-        "shared_workspace_across_consumers": True,
-        "streaming_enabled": True,
-        "tenant_isolation": "none",
-    }
+def _build_deployment_context(settings: Settings) -> dict[str, Any]:
+    runtime_profile = build_runtime_profile(settings)
+    context: dict[str, Any] = runtime_profile.deployment_context_dict()
     if settings.a2a_project:
         context["project"] = settings.a2a_project
     if settings.codex_workspace_root:
@@ -166,9 +158,7 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool | int]
     return context
 
 
-def _build_agent_card_description(
-    settings: Settings, deployment_context: dict[str, str | bool | int]
-) -> str:
+def _build_agent_card_description(settings: Settings, deployment_context: dict[str, Any]) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for Codex."
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
@@ -211,6 +201,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
     deployment_context = _build_deployment_context(settings)
+    runtime_profile = deployment_context.get("profile")
     session_binding_extension_params = build_session_binding_extension_params(
         deployment_context=deployment_context,
         directory_override_enabled=settings.a2a_allow_directory_override,
@@ -229,6 +220,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
     )
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
+        runtime_profile=runtime_profile if isinstance(runtime_profile, dict) else None,
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
     security_schemes: dict[str, SecurityScheme] = {
@@ -419,6 +411,7 @@ def create_app(settings: Settings) -> FastAPI:
         await client.close()
 
     deployment_context = _build_deployment_context(settings)
+    runtime_profile = build_runtime_profile(settings)
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
     jsonrpc_methods = {
@@ -472,14 +465,10 @@ def create_app(settings: Settings) -> FastAPI:
 
         @app.get("/health")
         async def health_check():
-            return {
-                "status": "ok",
-                "service": "codex-a2a-server",
-                "version": settings.a2a_version,
-                "streaming_enabled": True,
-                "session_shell_enabled": settings.a2a_enable_session_shell,
-                "interrupt_request_ttl_seconds": settings.a2a_interrupt_request_ttl_seconds,
-            }
+            return runtime_profile.health_payload(
+                service="codex-a2a-server",
+                version=settings.a2a_version,
+            )
 
     def _parse_json_body(body_bytes: bytes) -> dict | None:
         try:

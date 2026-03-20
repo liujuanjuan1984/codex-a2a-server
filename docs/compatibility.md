@@ -65,6 +65,12 @@ The current service profile is intentionally:
 One deployed instance should be treated as a single-tenant trust boundary, not
 as a secure multi-tenant runtime boundary.
 
+The compatibility surface distinguishes between:
+
+- a stable deployment profile
+- runtime features such as directory binding policy, session shell availability,
+  interrupt TTL, and health endpoint exposure
+
 ## Extension Stability
 
 - Shared metadata and extension contracts should stay synchronized across Agent

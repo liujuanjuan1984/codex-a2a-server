@@ -196,7 +196,7 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
 def patch_openapi_contract(
     app: FastAPI,
     *,
-    deployment_context: dict[str, str | bool | int],
+    deployment_context: dict[str, Any],
     directory_override_enabled: bool,
     protocol_version: str,
     session_shell_enabled: bool,
@@ -219,6 +219,11 @@ def patch_openapi_contract(
     )
     compatibility_profile = build_compatibility_profile_params(
         protocol_version=protocol_version,
+        runtime_profile=(
+            deployment_context.get("profile")
+            if isinstance(deployment_context.get("profile"), dict)
+            else None
+        ),
         session_shell_enabled=session_shell_enabled,
     )
     original_openapi = app.openapi

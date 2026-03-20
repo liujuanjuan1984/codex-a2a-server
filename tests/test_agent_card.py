@@ -60,6 +60,25 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert context["health_endpoint_enabled"] is True
     assert context["interrupt_request_ttl_seconds"] == 3600
     assert context["deployment_profile"] == "single_tenant_shared_workspace"
+    assert context["profile"]["profile_id"] == "codex-a2a-single-tenant-coding-v1"
+    assert context["profile"]["deployment"] == {
+        "id": "single_tenant_shared_workspace",
+        "single_tenant": True,
+        "shared_workspace_across_consumers": True,
+        "tenant_isolation": "none",
+    }
+    assert context["runtime_features"]["directory_binding"] == {
+        "allow_override": False,
+        "scope": "workspace_root_only",
+    }
+    assert context["runtime_features"]["session_shell"] == {
+        "enabled": True,
+        "availability": "enabled",
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }
+    assert context["runtime_features"]["interrupts"] == {
+        "request_ttl_seconds": 3600,
+    }
     assert context["session_shell_enabled"] is True
     assert context["single_tenant"] is True
     assert context["shared_workspace_across_consumers"] is True
@@ -143,6 +162,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
     }
+    assert compatibility.params["runtime_profile"] == context["profile"]
     assert compatibility.params["core"]["jsonrpc_methods"] == [
         "message/send",
         "message/stream",
@@ -211,6 +231,11 @@ def test_agent_card_omits_shell_method_when_disabled() -> None:
     assert "codex.sessions.shell" not in session_query.params["method_contracts"]
     assert session_query.params["deployment_context"]["session_shell_enabled"] is False
     assert session_query.params["deployment_context"]["interrupt_request_ttl_seconds"] == 45
+    assert session_query.params["deployment_context"]["runtime_features"]["session_shell"] == {
+        "enabled": False,
+        "availability": "disabled",
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     assert "codex.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
@@ -222,3 +247,8 @@ def test_agent_card_omits_shell_method_when_disabled() -> None:
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     shell_policy = compatibility.params["method_retention"]["codex.sessions.shell"]
     assert shell_policy["availability"] == "disabled"
+    assert compatibility.params["runtime_profile"]["runtime_features"]["session_shell"] == {
+        "enabled": False,
+        "availability": "disabled",
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }

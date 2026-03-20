@@ -202,6 +202,40 @@ async def test_health_endpoint_with_bearer_token_reports_runtime_flags(monkeypat
         "status": "ok",
         "service": "codex-a2a-server",
         "version": settings.a2a_version,
+        "profile": {
+            "profile_id": "codex-a2a-single-tenant-coding-v1",
+            "deployment": {
+                "id": "single_tenant_shared_workspace",
+                "single_tenant": True,
+                "shared_workspace_across_consumers": True,
+                "tenant_isolation": "none",
+            },
+            "runtime_features": {
+                "directory_binding": {
+                    "allow_override": True,
+                    "scope": "workspace_root_or_descendant",
+                },
+                "session_shell": {
+                    "enabled": False,
+                    "availability": "disabled",
+                    "toggle": "A2A_ENABLE_SESSION_SHELL",
+                },
+                "interrupts": {
+                    "request_ttl_seconds": 90,
+                },
+                "service_features": {
+                    "streaming": {
+                        "enabled": True,
+                        "availability": "always",
+                    },
+                    "health_endpoint": {
+                        "enabled": True,
+                        "availability": "enabled",
+                        "toggle": "A2A_ENABLE_HEALTH_ENDPOINT",
+                    },
+                },
+            },
+        },
         "streaming_enabled": True,
         "session_shell_enabled": False,
         "interrupt_request_ttl_seconds": 90,

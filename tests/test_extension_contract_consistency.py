@@ -185,6 +185,7 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     )
     expected_compatibility_profile = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
+        runtime_profile=deployment_context["profile"],
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
 
