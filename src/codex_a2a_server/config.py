@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -134,3 +136,8 @@ class Settings(BaseSettings):
         if value < 1:
             raise ValueError("A2A_INTERRUPT_REQUEST_TTL_SECONDS must be >= 1")
         return value
+
+    @classmethod
+    def from_env(cls) -> Settings:
+        settings_cls: type[BaseSettings] = cls
+        return cast(Settings, settings_cls())

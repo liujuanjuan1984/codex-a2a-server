@@ -8,7 +8,7 @@ import secrets
 import time
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
 import uvicorn
@@ -128,7 +128,7 @@ def _build_sse_streaming_route(
             ping=float(sse_ping_seconds),
         )
 
-    route.__signature__ = inspect.Signature(
+    cast(Any, route).__signature__ = inspect.Signature(
         parameters=[
             inspect.Parameter(
                 "request",
@@ -603,7 +603,7 @@ def create_app(settings: Settings) -> FastAPI:
             request_omit_reason = f"non-json content-type={content_type or 'unknown'}"
         elif limit > 0 and content_length is None:
             request_omit_reason = f"missing content-length with limit={limit}"
-        elif limit > 0 and content_length > limit:
+        elif limit > 0 and content_length is not None and content_length > limit:
             request_omit_reason = f"content-length={content_length} exceeds limit={limit}"
         else:
             body = await _get_request_body(request)
@@ -724,13 +724,14 @@ def create_app(settings: Settings) -> FastAPI:
         session_shell_enabled=settings.a2a_enable_session_shell,
     )
 
+    app_status_cls: Any | None = None
     try:
-        from sse_starlette.sse import AppStatus
+        from sse_starlette.sse import AppStatus as app_status_cls
     except ImportError:  # pragma: no cover - optional dependency
-        AppStatus = None
-    if AppStatus is not None:
-        AppStatus.should_exit = False
-        AppStatus.should_exit_event = None
+        pass
+    if app_status_cls is not None:
+        app_status_cls.should_exit = False
+        app_status_cls.should_exit_event = None
 
     return app
 
@@ -755,7 +756,7 @@ def _configure_logging(level: str) -> None:
 
 
 def main() -> None:
-    settings = Settings()
+    settings = Settings.from_env()
     app = create_app(settings)
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)
