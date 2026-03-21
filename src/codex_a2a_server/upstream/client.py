@@ -697,7 +697,7 @@ class CodexClient:
         data = result.get("data")
         if not isinstance(data, list):
             return []
-        # Normalize to the shape expected by jsonrpc_ext list mapping.
+        # Normalize to the shape expected by the JSON-RPC session query mapping.
         sessions: list[dict[str, Any]] = []
         for item in data:
             if not isinstance(item, dict):
@@ -733,7 +733,7 @@ class CodexClient:
         if not isinstance(turns, list):
             return []
 
-        # Best-effort mapping into the legacy shape expected by jsonrpc_ext.
+        # Best-effort mapping into the message shape consumed by the JSON-RPC layer.
         messages: list[dict[str, Any]] = []
         for turn in turns:
             if not isinstance(turn, dict):

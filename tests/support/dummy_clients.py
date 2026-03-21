@@ -101,7 +101,9 @@ class DummySessionQueryCodexClient:
         }
         return {"ok": True, "session_id": session_id, "turn_id": "turn-1"}
 
-    async def session_command(self, session_id: str, *, request=None, directory=None) -> CodexMessage:
+    async def session_command(
+        self, session_id: str, *, request=None, directory=None
+    ) -> CodexMessage:
         self.last_command = {
             "session_id": session_id,
             "request": request,

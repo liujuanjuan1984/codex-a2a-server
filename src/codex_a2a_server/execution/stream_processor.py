@@ -156,7 +156,9 @@ class StreamEventProcessor:
             return
         self._diagnostics.last_idle_log_at = now
         self._diagnostics.idle_log_count += 1
-        snapshot = self._diagnostics.snapshot(now=now, stream_open=not self._completion_event.is_set())
+        snapshot = self._diagnostics.snapshot(
+            now=now, stream_open=not self._completion_event.is_set()
+        )
         logger.debug(
             "Codex event stream idle task_id=%s session_id=%s completion_observed=%s "
             "emitted_chunk_count=%s suppressed_chunk_count=%s started_ms_ago=%s "
@@ -266,9 +268,8 @@ class StreamEventProcessor:
                 else:
                     await self.flush_buffered_text_chunk()
                     self._buffered_text_chunk = BufferedTextChunk.from_chunk(chunk, now=now)
-                if (
-                    self._buffered_text_chunk is not None
-                    and self._buffered_text_chunk.should_flush(now=now)
+                if self._buffered_text_chunk is not None and self._buffered_text_chunk.should_flush(
+                    now=now
                 ):
                     await self.flush_buffered_text_chunk()
                 continue
