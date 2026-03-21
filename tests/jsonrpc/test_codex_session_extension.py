@@ -15,7 +15,7 @@ from codex_a2a_server.contracts.extensions import (
 )
 from codex_a2a_server.jsonrpc.application import CodexSessionQueryJSONRPCApplication
 from codex_a2a_server.profile.runtime import build_runtime_profile
-from codex_a2a_server.server.application import build_agent_card
+from codex_a2a_server.server.agent_card import build_agent_card
 from tests.support.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.support.helpers import make_settings
 

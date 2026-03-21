@@ -4,8 +4,14 @@ import httpx
 import pytest
 
 from codex_a2a_server.contracts.extensions import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
+    INTERRUPT_CALLBACK_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_EXTENSION_URI,
     SESSION_QUERY_MAX_LIMIT,
+    STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
@@ -15,16 +21,8 @@ from codex_a2a_server.contracts.extensions import (
     build_wire_contract_extension_params,
 )
 from codex_a2a_server.profile.runtime import build_runtime_profile
-from codex_a2a_server.server.application import (
-    COMPATIBILITY_PROFILE_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    SESSION_BINDING_EXTENSION_URI,
-    SESSION_QUERY_EXTENSION_URI,
-    STREAMING_EXTENSION_URI,
-    WIRE_CONTRACT_EXTENSION_URI,
-    build_agent_card,
-    create_app,
-)
+from codex_a2a_server.server.agent_card import build_agent_card
+from codex_a2a_server.server.application import create_app
 from tests.support.helpers import DummySessionQueryCodexClient as DummyCodexClient
 from tests.support.helpers import make_settings
 

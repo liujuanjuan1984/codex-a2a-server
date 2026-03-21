@@ -2,18 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
-    Artifact,
     Message,
     Part,
     Role,
@@ -25,92 +21,27 @@ from a2a.types import (
 )
 
 from codex_a2a_server.codex_client import CodexClient
-from codex_a2a_server.contracts.runtime_output import (
-    SHARED_METADATA_NAMESPACE,
-    build_status_stream_metadata,
+from codex_a2a_server.execution.cancellation import (
+    await_cancel_cleanup,
+    emit_canceled_status,
+    prepare_cancel_waitables,
 )
-from codex_a2a_server.execution.stream_state import (
-    BlockType,
-    StreamOutputState,
-    build_stream_artifact_metadata,
+from codex_a2a_server.execution.directory_policy import resolve_and_validate_directory
+from codex_a2a_server.execution.request_metadata import (
+    extract_codex_directory,
+    extract_shared_session_id,
 )
+from codex_a2a_server.execution.response_emitter import (
+    emit_non_stream_completion,
+    emit_streaming_completion,
+)
+from codex_a2a_server.execution.session_runtime import SessionRuntime
+from codex_a2a_server.execution.stream_state import StreamOutputState
 from codex_a2a_server.execution.streaming import consume_codex_stream
 
-from .output_mapping import (
-    build_assistant_message,
-    build_history,
-    build_output_metadata,
-    enqueue_artifact_update,
-    extract_token_usage,
-    merge_token_usage,
-)
+from .output_mapping import enqueue_artifact_update, extract_token_usage, merge_token_usage
 
 logger = logging.getLogger(__name__)
-
-
-class _TTLCache:
-    """Bounded TTL cache for hashable key -> string value.
-
-    This is intentionally tiny and dependency-free. It provides best-effort cleanup:
-    - Expired entries are removed on get/set.
-    - When maxsize is exceeded, we evict expired entries first, then the earliest-expiring entries.
-    """
-
-    def __init__(
-        self,
-        *,
-        ttl_seconds: int,
-        maxsize: int,
-        now: Callable[[], float] = time.monotonic,
-        refresh_on_get: bool = False,
-    ) -> None:
-        self._ttl_seconds = int(ttl_seconds)
-        self._maxsize = int(maxsize)
-        self._now = now
-        self._refresh_on_get = bool(refresh_on_get)
-        # value: (string_value, expires_at_monotonic)
-        self._store: dict[object, tuple[str, float]] = {}
-
-    def get(self, key: object) -> str | None:
-        if self._ttl_seconds <= 0 or self._maxsize <= 0:
-            return None
-        item = self._store.get(key)
-        if not item:
-            return None
-        value, expires_at = item
-        now = self._now()
-        if expires_at <= now:
-            self._store.pop(key, None)
-            return None
-        if self._refresh_on_get:
-            self._store[key] = (value, now + float(self._ttl_seconds))
-        return value
-
-    def set(self, key: object, value: str) -> None:
-        if self._ttl_seconds <= 0 or self._maxsize <= 0:
-            return
-        now = self._now()
-        expires_at = now + float(self._ttl_seconds)
-        self._store[key] = (value, expires_at)
-        self._evict_if_needed(now=now)
-
-    def pop(self, key: object) -> None:
-        self._store.pop(key, None)
-
-    def _evict_if_needed(self, *, now: float) -> None:
-        if len(self._store) <= self._maxsize:
-            return
-        # 1) Drop expired.
-        expired = [k for k, (_, exp) in self._store.items() if exp <= now]
-        for k in expired:
-            self._store.pop(k, None)
-        if len(self._store) <= self._maxsize:
-            return
-        # 2) Still too big: evict the least recently renewed entries first.
-        overflow = len(self._store) - self._maxsize
-        by_expiry = sorted(self._store.items(), key=lambda item: item[1][1])
-        for k, _ in by_expiry[:overflow]:
-            self._store.pop(k, None)
 
 
 class CodexAgentExecutor(AgentExecutor):
@@ -128,67 +59,19 @@ class CodexAgentExecutor(AgentExecutor):
         self._streaming_enabled = streaming_enabled
         self._cancel_abort_timeout_seconds = float(cancel_abort_timeout_seconds)
         self._stream_idle_diagnostic_seconds = stream_idle_diagnostic_seconds
-        self._sessions = _TTLCache(
-            ttl_seconds=session_cache_ttl_seconds,
-            maxsize=session_cache_maxsize,
+        self._session_runtime = SessionRuntime(
+            session_cache_ttl_seconds=session_cache_ttl_seconds,
+            session_cache_maxsize=session_cache_maxsize,
         )
-        self._session_owners = _TTLCache(
-            ttl_seconds=session_cache_ttl_seconds,
-            maxsize=session_cache_maxsize,
-            refresh_on_get=True,
-        )  # session_id -> identity
-        self._pending_session_claims: dict[str, str] = {}
-        self._lock = asyncio.Lock()
-        self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
-        self._session_locks: dict[str, asyncio.Lock] = {}
-        self._running_requests: dict[tuple[str, str], asyncio.Task[Any]] = {}
-        self._running_stop_events: dict[tuple[str, str], asyncio.Event] = {}
-        self._running_identities: dict[tuple[str, str], str] = {}
+        self._sessions = self._session_runtime.session_bindings
+        self._session_owners = self._session_runtime.session_owners
+        self._pending_session_claims = self._session_runtime.pending_session_claims
+        self._running_requests = self._session_runtime.running_requests
+        self._running_stop_events = self._session_runtime.running_stop_events
+        self._running_identities = self._session_runtime.running_identities
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
-        """Normalizes and validates the directory parameter against workspace boundaries.
-
-        Returns:
-            The normalized absolute path string if valid.
-        Raises:
-            ValueError: If the path is outside the allowed workspace.
-        """
-        base_dir_str = self._client.directory or os.getcwd()
-        base_path = Path(base_dir_str).resolve()
-
-        if requested is not None and not isinstance(requested, str):
-            raise ValueError("Directory must be a string path")
-
-        requested = requested.strip() if requested else requested
-        if not requested:
-            return str(base_path)
-
-        def _resolve_requested(path: str) -> Path:
-            p = Path(path)
-            if not p.is_absolute():
-                p = base_path / p
-            return p.resolve()
-
-        # 1. Deny override if disabled in settings
-        if not self._client.settings.a2a_allow_directory_override:
-            # If requested matches normalized base, it's fine.
-            requested_path = _resolve_requested(requested)
-            if requested_path == base_path:
-                return str(base_path)
-            raise ValueError("Directory override is disabled by service configuration")
-
-        # 2. Resolve requested path
-        requested_path = _resolve_requested(requested)
-
-        # 3. Boundary check: must be subpath of base_path
-        try:
-            requested_path.relative_to(base_path)
-        except ValueError as err:
-            raise ValueError(
-                f"Directory {requested} is outside the allowed workspace {base_path}"
-            ) from err
-
-        return str(requested_path)
+        return resolve_and_validate_directory(self._client, requested)
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -208,7 +91,7 @@ class CodexAgentExecutor(AgentExecutor):
 
         streaming_request = self._should_stream(context)
         user_text = context.get_user_input().strip()
-        bound_session_id = _extract_shared_session_id(context)
+        bound_session_id = extract_shared_session_id(context)
 
         # Directory validation
         metadata = context.metadata
@@ -221,7 +104,7 @@ class CodexAgentExecutor(AgentExecutor):
                 streaming_request=streaming_request,
             )
             return
-        requested_dir = _extract_codex_directory(context)
+        requested_dir = extract_codex_directory(context)
 
         try:
             directory = self._resolve_and_validate_directory(requested_dir)
@@ -267,13 +150,15 @@ class CodexAgentExecutor(AgentExecutor):
         pending_preferred_claim = False
         session_lock: asyncio.Lock | None = None
         session_id = ""
-        execution_key = (task_id, context_id)
         current_task = asyncio.current_task()
         if current_task is not None:
-            async with self._lock:
-                self._running_requests[execution_key] = current_task
-                self._running_stop_events[execution_key] = stop_event
-                self._running_identities[execution_key] = identity
+            await self._session_runtime.track_running_request(
+                task_id=task_id,
+                context_id=context_id,
+                identity=identity,
+                task=current_task,
+                stop_event=stop_event,
+            )
 
         try:
             session_id, pending_preferred_claim = await self._get_or_create_session(
@@ -346,71 +231,28 @@ class CodexAgentExecutor(AgentExecutor):
                 if stream_task:
                     await stream_task
                     stream_task = None
-                if stream_state.should_emit_final_snapshot(response_text):
-                    sequence = stream_state.next_sequence()
-                    await enqueue_artifact_update(
-                        event_queue=event_queue,
-                        task_id=task_id,
-                        context_id=context_id,
-                        artifact_id=stream_artifact_id,
-                        part=TextPart(text=response_text),
-                        append=stream_state.emitted_stream_chunk,
-                        last_chunk=True,
-                        artifact_metadata=build_stream_artifact_metadata(
-                            block_type=BlockType.TEXT,
-                            source="final_snapshot",
-                            message_id=resolved_message_id,
-                            sequence=sequence,
-                            event_id=stream_state.build_event_id(sequence),
-                        ),
-                    )
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(
-                            state=TaskState.input_required,
-                        ),
-                        final=True,
-                        metadata=build_output_metadata(
-                            session_id=response.session_id,
-                            usage=resolved_token_usage,
-                            stream=build_status_stream_metadata(
-                                message_id=resolved_message_id,
-                                event_id=f"{stream_state.event_id_namespace}:status",
-                                source="status",
-                            ),
-                        ),
-                    )
-                )
-            else:
-                response_text = response_text or "(No text content returned by Codex.)"
-                assistant_message = build_assistant_message(
+                await emit_streaming_completion(
+                    event_queue=event_queue,
                     task_id=task_id,
                     context_id=context_id,
-                    text=response_text,
-                    message_id=resolved_message_id,
+                    response_text=response_text,
+                    session_id=response.session_id,
+                    resolved_message_id=resolved_message_id,
+                    resolved_token_usage=resolved_token_usage,
+                    stream_artifact_id=stream_artifact_id,
+                    stream_state=stream_state,
                 )
-                artifact = Artifact(
-                    artifact_id=str(uuid.uuid4()),
-                    name="response",
-                    parts=[Part(root=TextPart(text=response_text))],
-                )
-                history = build_history(context)
-                task = Task(
-                    id=task_id,
+            else:
+                await emit_non_stream_completion(
+                    event_queue=event_queue,
+                    context=context,
+                    task_id=task_id,
                     context_id=context_id,
-                    status=TaskStatus(state=TaskState.input_required),
-                    history=history,
-                    artifacts=[artifact],
-                    metadata=build_output_metadata(
-                        session_id=response.session_id,
-                        usage=resolved_token_usage,
-                    ),
+                    response_text=response_text,
+                    session_id=response.session_id,
+                    resolved_message_id=resolved_message_id,
+                    resolved_token_usage=resolved_token_usage,
                 )
-                # Attach the assistant message as the current status message.
-                task.status.message = assistant_message
-                await event_queue.enqueue_event(task)
         except Exception as exc:
             logger.exception("Codex request failed")
             await self._emit_error(
@@ -434,10 +276,10 @@ class CodexAgentExecutor(AgentExecutor):
                     await stream_task
             if session_lock and session_lock.locked():
                 session_lock.release()
-            async with self._lock:
-                self._running_requests.pop(execution_key, None)
-                self._running_stop_events.pop(execution_key, None)
-                self._running_identities.pop(execution_key, None)
+            await self._session_runtime.untrack_running_request(
+                task_id=task_id,
+                context_id=context_id,
+            )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -456,64 +298,25 @@ class CodexAgentExecutor(AgentExecutor):
             call_context = context.call_context
             identity = (call_context.state.get("identity") if call_context else None) or "anonymous"
 
-            event = TaskStatusUpdateEvent(
+            await emit_canceled_status(
+                event_queue,
                 task_id=task_id,
                 context_id=context_id,
-                status=TaskStatus(state=TaskState.canceled),
-                final=True,
             )
-            await event_queue.enqueue_event(event)
 
-            execution_key = (task_id, context_id)
-            async with self._lock:
-                running_identity = self._running_identities.get(execution_key, identity)
-                running_task = self._running_requests.get(execution_key)
-                stop_event = self._running_stop_events.get(execution_key)
-                self._sessions.pop((running_identity, context_id))
-                inflight = self._inflight_session_creates.pop((running_identity, context_id), None)
-            if stop_event:
-                stop_event.set()
-            if (
-                running_task
-                and running_task is not asyncio.current_task()
-                and not running_task.done()
-            ):
-                running_task.cancel()
-            waitables: list[asyncio.Task[Any]] = []
-            if (
-                running_task
-                and running_task is not asyncio.current_task()
-                and not running_task.done()
-            ):
-                waitables.append(running_task)
-            if inflight:
-                inflight.cancel()
-                waitables.append(inflight)
-
-            if waitables and self._cancel_abort_timeout_seconds > 0:
-                done, pending = await asyncio.wait(
-                    set(waitables),
-                    timeout=self._cancel_abort_timeout_seconds,
-                )
-                for task in done:
-                    with suppress(asyncio.CancelledError, Exception):
-                        await task
-                if pending:
-                    logger.warning(
-                        "Cancel abort timeout exceeded task_id=%s context_id=%s "
-                        "abort_timeout_seconds=%.3f pending_tasks=%s",
-                        task_id,
-                        context_id,
-                        self._cancel_abort_timeout_seconds,
-                        len(pending),
-                    )
-            elif waitables:
-                logger.info(
-                    "Cancel abort wait skipped task_id=%s context_id=%s abort_timeout_seconds=%.3f",
-                    task_id,
-                    context_id,
-                    self._cancel_abort_timeout_seconds,
-                )
+            running = await self._session_runtime.cancel_running_request(
+                task_id=task_id,
+                context_id=context_id,
+                identity=identity,
+            )
+            waitables = prepare_cancel_waitables(running, current_task=asyncio.current_task())
+            await await_cancel_cleanup(
+                waitables,
+                task_id=task_id,
+                context_id=context_id,
+                cancel_abort_timeout_seconds=self._cancel_abort_timeout_seconds,
+                logger=logger,
+            )
         except Exception as exc:
             logger.exception("Cancel failed")
             if task_id and context_id:
@@ -535,72 +338,13 @@ class CodexAgentExecutor(AgentExecutor):
         preferred_session_id: str | None = None,
         directory: str | None = None,
     ) -> tuple[str, bool]:
-        # Caller explicitly bound the request to a known Codex session.
-        if preferred_session_id:
-            async with self._lock:
-                owner = self._session_owners.get(preferred_session_id)
-                pending_owner = self._pending_session_claims.get(preferred_session_id)
-                if owner and owner != identity:
-                    logger.warning(
-                        "Identity %s tried to hijack session %s owned by %s",
-                        identity,
-                        preferred_session_id,
-                        owner,
-                    )
-                    raise PermissionError(f"Session {preferred_session_id} is not owned by you")
-
-                if pending_owner and pending_owner != identity:
-                    logger.warning(
-                        "Identity %s tried to use session %s while pending owner is %s",
-                        identity,
-                        preferred_session_id,
-                        pending_owner,
-                    )
-                    raise PermissionError(f"Session {preferred_session_id} is not owned by you")
-
-                # Existing owner is trusted and can be bound immediately.
-                if owner == identity:
-                    self._sessions.set((identity, context_id), preferred_session_id)
-                    return preferred_session_id, False
-
-                # Unknown owner: reserve a temporary claim; finalize after upstream send succeeds.
-                self._pending_session_claims[preferred_session_id] = identity
-                return preferred_session_id, True
-
-        task: asyncio.Task[str] | None = None
-        cache_key = (identity, context_id)
-        async with self._lock:
-            existing = self._sessions.get(cache_key)
-            if existing:
-                return existing, False
-            task = self._inflight_session_creates.get(cache_key)
-            if task is None:
-                task = asyncio.create_task(
-                    self._client.create_session(title=title, directory=directory)
-                )
-                self._inflight_session_creates[cache_key] = task
-
-        try:
-            session_id = await task
-        except Exception:
-            async with self._lock:
-                if self._inflight_session_creates.get(cache_key) is task:
-                    self._inflight_session_creates.pop(cache_key, None)
-            raise
-
-        async with self._lock:
-            # Session create finished; commit to cache and drop inflight marker.
-            owner = self._session_owners.get(session_id)
-            if owner and owner != identity:
-                if self._inflight_session_creates.get(cache_key) is task:
-                    self._inflight_session_creates.pop(cache_key, None)
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            self._sessions.set(cache_key, session_id)
-            if not owner:
-                self._session_owners.set(session_id, identity)
-            if self._inflight_session_creates.get(cache_key) is task:
-                self._inflight_session_creates.pop(cache_key, None)
-        return session_id, False
+        return await self._session_runtime.get_or_create_session(
+            identity=identity,
+            context_id=context_id,
+            title=title,
+            preferred_session_id=preferred_session_id,
+            create_session=lambda: self._client.create_session(title=title, directory=directory),
+        )
 
     async def _finalize_preferred_session_binding(
         self,
@@ -609,72 +353,47 @@ class CodexAgentExecutor(AgentExecutor):
         context_id: str,
         session_id: str,
     ) -> None:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            pending_owner = self._pending_session_claims.get(session_id)
-            if owner and owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            if pending_owner and pending_owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-
-            self._session_owners.set(session_id, identity)
-            self._sessions.set((identity, context_id), session_id)
-            if self._pending_session_claims.get(session_id) == identity:
-                self._pending_session_claims.pop(session_id, None)
+        await self._session_runtime.finalize_preferred_session_binding(
+            identity=identity,
+            context_id=context_id,
+            session_id=session_id,
+        )
 
     async def _release_preferred_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
-            if self._pending_session_claims.get(session_id) == identity:
-                self._pending_session_claims.pop(session_id, None)
+        await self._session_runtime.release_preferred_session_claim(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def claim_session(self, *, identity: str, session_id: str) -> bool:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            pending_owner = self._pending_session_claims.get(session_id)
-            if owner and owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            if pending_owner and pending_owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            if owner == identity:
-                return False
-            self._pending_session_claims[session_id] = identity
-            return True
+        return await self._session_runtime.claim_session(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def finalize_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            pending_owner = self._pending_session_claims.get(session_id)
-            if owner and owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            if pending_owner and pending_owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            self._session_owners.set(session_id, identity)
-            if pending_owner == identity:
-                self._pending_session_claims.pop(session_id, None)
+        await self._session_runtime.finalize_session_claim(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def release_session_claim(self, *, identity: str, session_id: str) -> None:
-        await self._release_preferred_session_claim(identity=identity, session_id=session_id)
+        await self._session_runtime.release_session_claim(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def session_owner_matches(self, *, identity: str, session_id: str) -> bool | None:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            if owner:
-                return owner == identity
-            pending_owner = self._pending_session_claims.get(session_id)
-            if pending_owner:
-                return pending_owner == identity
-        return None
+        return await self._session_runtime.session_owner_matches(
+            identity=identity,
+            session_id=session_id,
+        )
 
     def resolve_directory(self, requested: str | None) -> str | None:
         return self._resolve_and_validate_directory(requested)
 
     async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
-        async with self._lock:
-            lock = self._session_locks.get(session_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._session_locks[session_id] = lock
-            return lock
+        return await self._session_runtime.get_session_lock(session_id)
 
     async def _emit_error(
         self,
@@ -730,55 +449,3 @@ class CodexAgentExecutor(AgentExecutor):
         # JSON-RPC transport sets method in call context state.
         method = call_context.state.get("method")
         return method == "message/stream"
-
-
-def _extract_namespaced_string_metadata(
-    context: RequestContext,
-    *,
-    namespace: str,
-    path: tuple[str, ...],
-) -> str | None:
-    candidates: list[Mapping[str, Any]] = []
-    try:
-        meta = context.metadata
-        if isinstance(meta, Mapping):
-            candidates.append(meta)
-    except Exception:
-        pass
-
-    if context.message is not None:
-        msg_meta = getattr(context.message, "metadata", None) or {}
-        if isinstance(msg_meta, Mapping):
-            candidates.append(msg_meta)
-
-    for candidate in candidates:
-        current = candidate.get(namespace)
-        for part in path[:-1]:
-            if not isinstance(current, Mapping):
-                current = None
-                break
-            current = current.get(part)
-        if not isinstance(current, Mapping):
-            continue
-        value = current.get(path[-1])
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
-    return None
-
-
-def _extract_shared_session_id(context: RequestContext) -> str | None:
-    return _extract_namespaced_string_metadata(
-        context,
-        namespace=SHARED_METADATA_NAMESPACE,
-        path=("session", "id"),
-    )
-
-
-def _extract_codex_directory(context: RequestContext) -> str | None:
-    return _extract_namespaced_string_metadata(
-        context,
-        namespace="codex",
-        path=("directory",),
-    )

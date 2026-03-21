@@ -5,7 +5,8 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 
 from codex_a2a_server.codex_client import CodexClient
-from codex_a2a_server.execution.executor import CodexAgentExecutor, _TTLCache
+from codex_a2a_server.execution.executor import CodexAgentExecutor
+from codex_a2a_server.execution.session_runtime import TTLCache
 from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
@@ -193,7 +194,7 @@ def test_owner_cache_refresh_on_get_extends_ttl():
     def _now() -> float:
         return now
 
-    cache = _TTLCache(ttl_seconds=10, maxsize=10, now=_now, refresh_on_get=True)
+    cache = TTLCache(ttl_seconds=10, maxsize=10, now=_now, refresh_on_get=True)
     cache.set("session-1", "user-1")
 
     now = 9.0
@@ -212,7 +213,7 @@ def test_owner_cache_evicts_earliest_expiring_entry_on_overflow():
     def _now() -> float:
         return now
 
-    cache = _TTLCache(ttl_seconds=10, maxsize=2, now=_now, refresh_on_get=False)
+    cache = TTLCache(ttl_seconds=10, maxsize=2, now=_now, refresh_on_get=False)
     cache.set("session-1", "user-1")
 
     now = 2.0

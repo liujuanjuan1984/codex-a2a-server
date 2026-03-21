@@ -11,7 +11,8 @@ from a2a.types import TransportProtocol
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
-from codex_a2a_server.server.application import build_agent_card, create_app
+from codex_a2a_server.server.agent_card import build_agent_card
+from codex_a2a_server.server.application import create_app
 from tests.support.helpers import DummyChatCodexClient, make_settings
 
 

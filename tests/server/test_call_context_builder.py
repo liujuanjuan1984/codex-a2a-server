@@ -1,6 +1,6 @@
 from starlette.requests import Request
 
-from codex_a2a_server.server.application import IdentityAwareCallContextBuilder
+from codex_a2a_server.server.call_context import IdentityAwareCallContextBuilder
 
 
 def _request(path: str, *, raw_path: bytes | None = None) -> Request:
