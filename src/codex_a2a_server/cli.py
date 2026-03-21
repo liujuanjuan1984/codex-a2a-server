@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _serve_main() -> None:
-    from .app import main as serve_main
+    from .server.application import main as serve_main
 
     serve_main()
 
