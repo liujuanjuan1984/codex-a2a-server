@@ -220,6 +220,23 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "tasks/cancel",
         "tasks/resubscribe",
     ]
+    assert compatibility.params["service_behaviors"]["tasks/resubscribe"] == {
+        "scope": "service-level",
+        "jsonrpc_method": "tasks/resubscribe",
+        "http_endpoint": "/v1/tasks/{id}:subscribe",
+        "non_terminal_behavior": "stream_live_updates",
+        "terminal_behavior": "replay_once_then_close",
+        "notes": [
+            (
+                "tasks/resubscribe itself is part of the core interoperability baseline, but "
+                "the terminal replay-once policy is deployment-specific service behavior."
+            ),
+            (
+                "Consumers should not assume replay-once terminal delivery is guaranteed by "
+                "generic A2A runtimes unless it is declared explicitly."
+            ),
+        ],
+    }
     assert compatibility.params["extension_taxonomy"]["shared_extensions"] == [
         "urn:a2a:session-binding/v1",
         "urn:a2a:stream-hints/v1",
@@ -240,6 +257,23 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "tasks/cancel",
         "tasks/resubscribe",
     ]
+    assert wire_contract.params["service_behaviors"]["tasks/resubscribe"] == {
+        "scope": "service-level",
+        "jsonrpc_method": "tasks/resubscribe",
+        "http_endpoint": "/v1/tasks/{id}:subscribe",
+        "non_terminal_behavior": "stream_live_updates",
+        "terminal_behavior": "replay_once_then_close",
+        "notes": [
+            (
+                "tasks/resubscribe remains part of the core A2A method baseline, but this "
+                "deployment's terminal-task replay behavior is a service-level contract."
+            ),
+            (
+                "When the task is already terminal, this service replays one final task "
+                "snapshot and then closes the stream."
+            ),
+        ],
+    }
     assert "codex.sessions.shell" in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["unsupported_method_error"]["code"] == -32601
     assert wire_contract.params["unsupported_method_error"]["data_fields"] == [
@@ -255,6 +289,10 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert any("urn:a2a:*" in note for note in compatibility.params["consumer_guidance"])
     assert any(
         "execution_environment" in note for note in compatibility.params["consumer_guidance"]
+    )
+    assert any(
+        "terminal tasks/resubscribe replay-once behavior" in note
+        for note in compatibility.params["consumer_guidance"]
     )
     shell_policy = compatibility.params["method_retention"]["codex.sessions.shell"]
     assert shell_policy["availability"] == "enabled"

@@ -6,10 +6,12 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.types import TransportProtocol
+from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
-from codex_a2a_server.app import _build_sse_streaming_route, build_agent_card, create_app
+from codex_a2a_server.app import build_agent_card, create_app
 from tests.helpers import DummyChatCodexClient, make_settings
 
 
@@ -67,7 +69,8 @@ def test_create_app_resets_sse_app_status() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_route_uses_configured_sse_ping_interval() -> None:
+async def test_streaming_route_uses_sdk_default_sse_keepalive() -> None:
+    settings = make_settings(a2a_bearer_token="test-token")
     context_builder = MagicMock()
     context_builder.build.return_value = MagicMock()
 
@@ -94,14 +97,14 @@ async def test_streaming_route_uses_configured_sse_ping_interval() -> None:
         async for item in _empty_async_stream():
             yield item
 
-    route = _build_sse_streaming_route(
-        method=stream_method,
+    adapter = RESTAdapter(
+        agent_card=build_agent_card(settings),
+        http_handler=MagicMock(),
         context_builder=context_builder,
-        sse_ping_seconds=8,
     )
-    response = await route(request)
+    response = await adapter._handle_streaming_request(stream_method, request)
 
-    assert response.ping_interval == 8
+    assert response.ping_interval == EventSourceResponse.DEFAULT_PING_INTERVAL
 
 
 def test_create_app_propagates_stream_idle_diagnostic_setting(monkeypatch) -> None:
@@ -494,7 +497,7 @@ async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> 
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/v1/message:send",
@@ -518,7 +521,7 @@ async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             async with client.stream(
                 "POST", "/v1/message:stream", headers=headers, json=_rest_message_payload()
@@ -548,7 +551,7 @@ async def test_log_payloads_omits_non_json_request_body(monkeypatch, caplog) -> 
         "Content-Type": "application/octet-stream",
     }
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/", headers=headers, content=b"\x00\x01\x02\x03")
             assert resp.status_code < 500
@@ -576,7 +579,7 @@ async def test_log_payloads_omits_text_plain_request_body(monkeypatch, caplog) -
         '{"messageId":"m","role":"user","parts":[{"kind":"text","text":"secret"}]}}}'
     )
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/", headers=headers, content=body)
             assert resp.status_code < 500
@@ -613,7 +616,7 @@ async def test_log_payloads_omits_when_content_length_missing(monkeypatch, caplo
     async def _body_stream():
         yield body
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/",
@@ -649,7 +652,7 @@ async def test_log_payloads_omits_oversized_request_body(monkeypatch, caplog) ->
     headers = {"Authorization": "Bearer test-token"}
     oversized_text = "x" * 512
 
-    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.app"):
+    with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/",
@@ -694,7 +697,7 @@ async def test_request_logs_reuse_supplied_correlation_id(monkeypatch, caplog) -
         for record in caplog.records
         if record.name
         in {
-            "codex_a2a_server.app",
+            "codex_a2a_server.http_middlewares",
             "codex_a2a_server.request_handler",
             "codex_a2a_server.agent",
         }
@@ -743,7 +746,7 @@ async def test_request_logs_generate_correlation_id_for_stream_requests(
         for record in caplog.records
         if record.name
         in {
-            "codex_a2a_server.app",
+            "codex_a2a_server.http_middlewares",
             "codex_a2a_server.request_handler",
             "codex_a2a_server.streaming",
             "codex_a2a_server.agent",

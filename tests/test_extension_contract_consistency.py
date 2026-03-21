@@ -288,6 +288,21 @@ def test_guide_mentions_declared_streaming_contract_fields() -> None:
         )
 
 
+def test_guide_mentions_resubscribe_service_level_behavior() -> None:
+    guide_text = Path("docs/guide.md").read_text()
+    compatibility_text = Path("docs/compatibility.md").read_text()
+    wire_contract = build_wire_contract_extension_params(
+        protocol_version="0.3.0",
+        runtime_profile=build_runtime_profile(make_settings(a2a_bearer_token="test-token")),
+    )
+    assert "tasks/resubscribe" in wire_contract["service_behaviors"]
+
+    assert "replay-once" in guide_text
+    assert "one final task snapshot" in guide_text
+    assert "service-level" in guide_text
+    assert "terminal `tasks/resubscribe` replay-once behavior" in compatibility_text
+
+
 def test_guide_environment_variables_match_settings_aliases() -> None:
     import re
 

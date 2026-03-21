@@ -535,7 +535,7 @@ async def test_session_query_extension_does_not_log_response_bodies(monkeypatch,
     import codex_a2a_server.app as app_module
 
     monkeypatch.setattr(app_module, "CodexClient", DummyCodexClient)
-    caplog.set_level(logging.DEBUG, logger="codex_a2a_server.app")
+    caplog.set_level(logging.DEBUG, logger="codex_a2a_server.http_middlewares")
 
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=True, **_BASE_SETTINGS)

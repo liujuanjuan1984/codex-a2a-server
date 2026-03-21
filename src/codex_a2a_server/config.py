@@ -143,10 +143,6 @@ class Settings(BaseSettings):
         default=1.0,
         alias="A2A_CANCEL_ABORT_TIMEOUT_SECONDS",
     )
-    a2a_stream_sse_ping_seconds: int = Field(
-        default=10,
-        alias="A2A_STREAM_SSE_PING_SECONDS",
-    )
     a2a_stream_idle_diagnostic_seconds: float = Field(
         default=60.0,
         alias="A2A_STREAM_IDLE_DIAGNOSTIC_SECONDS",
@@ -197,13 +193,6 @@ class Settings(BaseSettings):
     def validate_cancel_abort_timeout_seconds(cls, value: float) -> float:
         if value < 0:
             raise ValueError("A2A_CANCEL_ABORT_TIMEOUT_SECONDS must be >= 0")
-        return value
-
-    @field_validator("a2a_stream_sse_ping_seconds")
-    @classmethod
-    def validate_stream_sse_ping_seconds(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("A2A_STREAM_SSE_PING_SECONDS must be > 0")
         return value
 
     @field_validator("a2a_stream_idle_diagnostic_seconds")

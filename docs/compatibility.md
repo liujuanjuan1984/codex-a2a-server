@@ -54,6 +54,12 @@ declared surfaces should not drift silently:
 Changes to those surfaces should be treated as compatibility-sensitive and
 should include corresponding test updates.
 
+Service-level behavior layered on top of those core methods should also be
+declared explicitly when this repository depends on it for interoperability.
+Current example: terminal `tasks/resubscribe` replay-once behavior is published
+as a service-level contract, not as a claim about generic A2A runtime
+semantics.
+
 ## Deployment Profile
 
 The current service profile is intentionally:

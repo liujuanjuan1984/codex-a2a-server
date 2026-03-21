@@ -181,8 +181,6 @@ Current implementation note:
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: how long `tasks/cancel` waits for
   in-flight execution/session-create cleanup after issuing cancellation,
   default `1.0`; `0` means best-effort cancel without waiting
-- `A2A_STREAM_SSE_PING_SECONDS`: transport-level SSE keepalive interval,
-  default `10` (integer seconds)
 - `A2A_STREAM_IDLE_DIAGNOSTIC_SECONDS`: threshold before the server emits a
   stream idle diagnostic log, default `60.0`
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: TTL for pending interrupt callbacks
@@ -300,6 +298,9 @@ described first in [README.md](../README.md) and above in this guide.
 - Non-streaming requests return a `Task` directly.
 - Non-streaming `message:send` responses may include normalized token usage at
   `Task.metadata.shared.usage` with the same field schema.
+- `tasks/resubscribe` remains part of the core A2A method baseline, but this
+  deployment's terminal-task replay-once policy is a declared service-level
+  behavior rather than a generic A2A guarantee.
 
 ### Streaming and Interrupt Contract
 
@@ -355,7 +356,8 @@ described first in [README.md](../README.md) and above in this guide.
   `metadata.shared.interrupt.details`, including readable `display_message`,
   resolved `patterns`, and `questions` when available.
 - HTTP streaming responses send transport-level SSE ping comments on a
-  configurable interval without adding synthetic A2A business events.
+  default keepalive interval from the underlying SDK / `sse-starlette`
+  response without adding synthetic A2A business events.
 - Interrupt status events no longer mirror the asked payload under
   `metadata.codex.interrupt`; downstream consumers should treat
   `metadata.shared.interrupt` as the single interrupt rendering contract.
@@ -572,7 +574,17 @@ curl -sS http://127.0.0.1:8000/ \
 
 ## Streaming Re-Subscription (`subscribe`)
 
-If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscribe while the task is still non-terminal.
+If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to
+re-subscribe while the task is still non-terminal.
+
+Terminal-task note:
+
+- While a task is non-terminal, the stream continues with live updates.
+- If the task is already terminal, this service replays one final task snapshot
+  and then closes the stream.
+- That replay-once terminal behavior is a service-level contract for this
+  deployment. It is published through the compatibility profile and wire
+  contract so clients do not mistake it for a generic A2A baseline rule.
 
 ## Development Setup
 

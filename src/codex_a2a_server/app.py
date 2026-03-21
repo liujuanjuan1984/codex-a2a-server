@@ -1,22 +1,13 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-import secrets
-import time
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 
 import uvicorn
+from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
-from a2a.server.apps.rest.rest_adapter import (
-    InvalidRequestError,
-    RESTAdapter,
-    ServerError,
-)
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
@@ -25,14 +16,10 @@ from a2a.types import (
     AgentInterface,
     AgentSkill,
     HTTPAuthSecurityScheme,
-    InternalError,
     SecurityScheme,
     TransportProtocol,
 )
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from sse_starlette.sse import EventSourceResponse
-from starlette.responses import StreamingResponse
 
 from .agent import CodexAgentExecutor
 from .codex_client import CodexClient
@@ -55,19 +42,12 @@ from .extension_contracts import (
     build_streaming_extension_params,
     build_wire_contract_extension_params,
 )
+from .http_middlewares import install_http_middlewares
 from .jsonrpc_ext import CodexSessionQueryJSONRPCApplication
-from .logging_context import (
-    CORRELATION_ID_HEADER,
-    install_log_record_factory,
-    reset_correlation_id,
-    resolve_correlation_id,
-    set_correlation_id,
-)
+from .logging_context import install_log_record_factory
 from .openapi_contracts import patch_openapi_contract
 from .profile import RuntimeProfile, build_runtime_profile
 from .request_handler import CodexRequestHandler
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
@@ -100,46 +80,6 @@ class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
         return context
 
 
-def _build_sse_streaming_route(
-    *,
-    method: Callable[[Request, ServerCallContext], AsyncIterable[object]],
-    context_builder: DefaultCallContextBuilder,
-    sse_ping_seconds: int,
-) -> Callable[[Request], Awaitable[EventSourceResponse]]:
-    async def route(request: Request):
-        try:
-            await request.body()
-            call_context = context_builder.build(request)
-
-            async def event_generator(
-                stream: AsyncIterable[object],
-            ) -> AsyncIterator[dict[str, object]]:
-                async for item in stream:
-                    yield {"data": item}
-
-            return EventSourceResponse(
-                event_generator(method(request, call_context)),
-                ping=sse_ping_seconds,
-            )
-        except (ValueError, RuntimeError, OSError) as e:
-            raise ServerError(
-                error=InvalidRequestError(message=f"Failed to pre-consume request body: {e}")
-            ) from e
-        except ServerError as e:
-            error = e.error or InternalError(message="Internal error due to unknown reason")
-            log_level = logging.ERROR if isinstance(error, InternalError) else logging.WARNING
-            logger.log(
-                log_level,
-                "Request error: Code=%s, Message='%s'%s",
-                error.code,
-                error.message,
-                ", Data=" + str(error.data) if error.data else "",
-            )
-            raise
-
-    return route
-
-
 def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for Codex."
     summary = (
@@ -154,6 +94,10 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
     parts.append(
         "Within one codex-a2a-server instance, all consumers share the same "
         "underlying Codex workspace/environment."
+    )
+    parts.append(
+        "Terminal tasks/resubscribe replay-once behavior is declared as a "
+        "service-level contract for this deployment."
     )
     parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
     runtime_context = runtime_profile.runtime_context
@@ -335,37 +279,6 @@ def build_agent_card(
     )
 
 
-def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
-    token = settings.a2a_bearer_token
-
-    def _unauthorized_response() -> JSONResponse:
-        return JSONResponse(
-            {"error": "Unauthorized"},
-            status_code=401,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    public_paths = {
-        "/.well-known/agent-card.json",
-        "/.well-known/agent.json",
-    }
-
-    @app.middleware("http")
-    async def bearer_auth(request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path in public_paths:
-            return await call_next(request)
-
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.lower().startswith("bearer "):
-            return _unauthorized_response()
-        provided = auth_header.split(" ", 1)[1].strip()
-        if not secrets.compare_digest(provided, token):
-            return _unauthorized_response()
-        request.state.user_identity = f"bearer:{hashlib.sha256(provided.encode()).hexdigest()[:12]}"
-
-        return await call_next(request)
-
-
 def create_app(settings: Settings) -> FastAPI:
     install_log_record_factory()
     client = CodexClient(settings)
@@ -403,8 +316,8 @@ def create_app(settings: Settings) -> FastAPI:
     if "shell" not in capability_snapshot.session_query_method_keys:
         jsonrpc_methods.pop("shell", None)
 
-    # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
-    app = CodexSessionQueryJSONRPCApplication(
+    # Compose the shared FastAPI app from the SDK JSON-RPC and REST application wrappers.
+    jsonrpc_app = CodexSessionQueryJSONRPCApplication(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
@@ -417,7 +330,13 @@ def create_app(settings: Settings) -> FastAPI:
         session_claim_finalize=executor.finalize_session_claim,
         session_claim_release=executor.release_session_claim,
         session_owner_matcher=executor.session_owner_matches,
-    ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
+    )
+    app = A2AFastAPI(
+        title=settings.a2a_title,
+        version=settings.a2a_version,
+        lifespan=lifespan,
+    )
+    jsonrpc_app.add_routes_to_app(app)
     app.state.codex_client = client
     app.state.codex_executor = executor
 
@@ -426,18 +345,7 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
     )
-    rest_routes = rest_adapter.routes()
-    rest_routes[("/v1/message:stream", "POST")] = _build_sse_streaming_route(
-        method=rest_adapter.handler.on_message_send_stream,
-        context_builder=context_builder,
-        sse_ping_seconds=settings.a2a_stream_sse_ping_seconds,
-    )
-    rest_routes[("/v1/tasks/{id}:subscribe", "GET")] = _build_sse_streaming_route(
-        method=rest_adapter.handler.on_resubscribe_to_task,
-        context_builder=context_builder,
-        sse_ping_seconds=settings.a2a_stream_sse_ping_seconds,
-    )
-    for route, callback in rest_routes.items():
+    for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
 
     if settings.a2a_enable_health_endpoint:
@@ -449,239 +357,11 @@ def create_app(settings: Settings) -> FastAPI:
                 version=settings.a2a_version,
             )
 
-    def _parse_json_body(body_bytes: bytes) -> dict | None:
-        try:
-            payload = json.loads(body_bytes.decode("utf-8", errors="replace"))
-        except Exception:
-            return None
-        return payload if isinstance(payload, dict) else None
-
-    def _detect_codex_extension_method(payload: dict | None) -> str | None:
-        if payload is None:
-            return None
-        method = payload.get("method")
-        if not isinstance(method, str):
-            return None
-        if method.startswith("codex."):
-            return method
-        return None
-
-    def _parse_content_length(value: str | None) -> int | None:
-        if value is None:
-            return None
-        try:
-            parsed = int(value)
-        except ValueError:
-            return None
-        return parsed if parsed >= 0 else None
-
-    def _normalize_content_type(value: str | None) -> str:
-        if not value:
-            return ""
-        return value.split(";", 1)[0].strip().lower()
-
-    def _is_json_content_type(content_type: str) -> bool:
-        if not content_type:
-            return False
-        return content_type == "application/json" or content_type.endswith("+json")
-
-    def _decode_payload_preview(body: bytes, *, limit: int) -> str:
-        text = body.decode("utf-8", errors="replace")
-        if limit > 0 and len(text) > limit:
-            return f"{text[:limit]}...[truncated]"
-        return text
-
-    async def _get_request_body(request: Request) -> bytes:
-        body = await request.body()
-        request._body = body  # allow downstream to read again
-        return body
-
-    def _looks_like_jsonrpc_message_payload(payload: dict | None) -> bool:
-        if payload is None:
-            return False
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            return False
-        if "parts" in message:
-            return True
-        role = message.get("role")
-        return isinstance(role, str) and role in {"user", "agent"}
-
-    def _looks_like_jsonrpc_envelope(payload: dict | None) -> bool:
-        if payload is None:
-            return False
-        method = payload.get("method")
-        version = payload.get("jsonrpc")
-        return isinstance(method, str) and isinstance(version, str)
-
-    @app.middleware("http")
-    async def guard_rest_payload_shape(request: Request, call_next):
-        if request.method != "POST" or request.url.path not in {
-            "/v1/message:send",
-            "/v1/message:stream",
-        }:
-            return await call_next(request)
-
-        body = await _get_request_body(request)
-        payload = _parse_json_body(body)
-        if _looks_like_jsonrpc_envelope(payload) or _looks_like_jsonrpc_message_payload(payload):
-            return JSONResponse(
-                {
-                    "error": (
-                        "Invalid HTTP+JSON payload for REST endpoint. "
-                        "Use message.content with ROLE_* role values, or call "
-                        "POST / with method=message/send or method=message/stream."
-                    )
-                },
-                status_code=400,
-            )
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def guard_missing_subscribe_task(request: Request, call_next):
-        path = request.url.path
-        if not path.startswith("/v1/tasks/") or not path.endswith(":subscribe"):
-            return await call_next(request)
-
-        encoded_task_id = path.removeprefix("/v1/tasks/").removesuffix(":subscribe")
-        task_id = unquote(encoded_task_id).strip()
-        if not task_id:
-            return JSONResponse({"error": "Task not found"}, status_code=404)
-
-        task = await task_store.get(task_id)
-        if task is None:
-            return JSONResponse({"error": "Task not found", "task_id": task_id}, status_code=404)
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def log_payloads(request: Request, call_next):
-        if not settings.a2a_log_payloads:
-            return await call_next(request)
-
-        path = request.url.path
-        limit = settings.a2a_log_body_limit
-        content_type = _normalize_content_type(request.headers.get("content-type"))
-        content_length = _parse_content_length(request.headers.get("content-length"))
-
-        sensitive_method: str | None = None
-        request_omit_reason: str | None = None
-
-        if not _is_json_content_type(content_type):
-            request_omit_reason = f"non-json content-type={content_type or 'unknown'}"
-        elif limit > 0 and content_length is None:
-            request_omit_reason = f"missing content-length with limit={limit}"
-        elif limit > 0 and content_length is not None and content_length > limit:
-            request_omit_reason = f"content-length={content_length} exceeds limit={limit}"
-        else:
-            body = await _get_request_body(request)
-            payload = _parse_json_body(body)
-            sensitive_method = _detect_codex_extension_method(payload)
-
-            if sensitive_method:
-                logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)
-            else:
-                logger.debug(
-                    "A2A request %s %s body=%s",
-                    request.method,
-                    path,
-                    _decode_payload_preview(body, limit=limit),
-                )
-
-        if request_omit_reason:
-            logger.debug(
-                "A2A request %s %s body=[omitted %s]",
-                request.method,
-                path,
-                request_omit_reason,
-            )
-
-        response = await call_next(request)
-        if isinstance(response, StreamingResponse):
-            status_code = getattr(response, "status_code", 200)
-            if request_omit_reason:
-                logger.debug(
-                    "A2A response %s status=%s body=[omitted request_%s]",
-                    path,
-                    status_code,
-                    request_omit_reason,
-                )
-            elif sensitive_method:
-                logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
-            else:
-                logger.debug("A2A response %s streaming", path)
-            return response
-
-        response_body = getattr(response, "body", b"") or b""
-        if sensitive_method:
-            logger.debug(
-                "A2A response %s status=%s bytes=%s method=%s",
-                path,
-                response.status_code,
-                len(response_body),
-                sensitive_method,
-            )
-            return response
-
-        if request_omit_reason:
-            logger.debug(
-                "A2A response %s status=%s bytes=%s body=[omitted request_%s]",
-                path,
-                response.status_code,
-                len(response_body),
-                request_omit_reason,
-            )
-            return response
-
-        response_content_type = _normalize_content_type(response.headers.get("content-type"))
-        if not _is_json_content_type(response_content_type):
-            logger.debug(
-                "A2A response %s status=%s bytes=%s body=[omitted non-json content-type=%s]",
-                path,
-                response.status_code,
-                len(response_body),
-                response_content_type or "unknown",
-            )
-            return response
-
-        logger.debug(
-            "A2A response %s status=%s body=%s",
-            path,
-            response.status_code,
-            _decode_payload_preview(response_body, limit=limit),
-        )
-        return response
-
-    add_auth_middleware(app, settings)
-
-    @app.middleware("http")
-    async def correlation_id_middleware(request: Request, call_next):
-        correlation_id = resolve_correlation_id(request.headers.get("x-request-id"))
-        request.state.correlation_id = correlation_id
-        token = set_correlation_id(correlation_id)
-        started_at = time.perf_counter()
-        path = request.url.path
-        logger.info("A2A request started method=%s path=%s", request.method, path)
-        try:
-            response = await call_next(request)
-            response.headers[CORRELATION_ID_HEADER] = correlation_id
-            logger.info(
-                "A2A request completed method=%s path=%s status=%s duration_ms=%.2f",
-                request.method,
-                path,
-                response.status_code,
-                (time.perf_counter() - started_at) * 1000.0,
-            )
-            return response
-        except Exception:
-            logger.exception(
-                "A2A request failed method=%s path=%s duration_ms=%.2f",
-                request.method,
-                path,
-                (time.perf_counter() - started_at) * 1000.0,
-            )
-            raise
-        finally:
-            reset_correlation_id(token)
+    install_http_middlewares(
+        app,
+        settings=settings,
+        task_store=task_store,
+    )
 
     patch_openapi_contract(
         app,

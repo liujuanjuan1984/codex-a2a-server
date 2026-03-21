@@ -20,6 +20,9 @@ STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:codex-a2a:codex-session-query/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
+TASKS_RESUBSCRIBE_METHOD = "tasks/resubscribe"
+TASKS_SUBSCRIBE_HTTP_ENDPOINT = "/v1/tasks/{id}:subscribe"
+
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
 SHARED_STREAM_METADATA_FIELD = "metadata.shared.stream"
@@ -217,12 +220,12 @@ CORE_JSONRPC_METHODS: tuple[str, ...] = (
     "message/stream",
     "tasks/get",
     "tasks/cancel",
-    "tasks/resubscribe",
+    TASKS_RESUBSCRIBE_METHOD,
 )
 CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
     "/v1/message:send",
     "/v1/message:stream",
-    "/v1/tasks/{id}:subscribe",
+    TASKS_SUBSCRIBE_HTTP_ENDPOINT,
 )
 WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
     "type",
@@ -284,6 +287,23 @@ def build_wire_contract_extension_params(
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
     snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    resubscribe_behavior = {
+        "scope": "service-level",
+        "jsonrpc_method": TASKS_RESUBSCRIBE_METHOD,
+        "http_endpoint": TASKS_SUBSCRIBE_HTTP_ENDPOINT,
+        "non_terminal_behavior": "stream_live_updates",
+        "terminal_behavior": "replay_once_then_close",
+        "notes": [
+            (
+                "tasks/resubscribe remains part of the core A2A method baseline, but this "
+                "deployment's terminal-task replay behavior is a service-level contract."
+            ),
+            (
+                "When the task is already terminal, this service replays one final task "
+                "snapshot and then closes the stream."
+            ),
+        ],
+    }
     return {
         "protocol_version": protocol_version,
         "preferred_transport": "HTTP+JSON",
@@ -308,6 +328,9 @@ def build_wire_contract_extension_params(
             "type": "METHOD_NOT_SUPPORTED",
             "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
         },
+        "service_behaviors": {
+            TASKS_RESUBSCRIBE_METHOD: resubscribe_behavior,
+        },
     }
 
 
@@ -317,6 +340,23 @@ def build_compatibility_profile_params(
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
     snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    resubscribe_behavior = {
+        "scope": "service-level",
+        "jsonrpc_method": TASKS_RESUBSCRIBE_METHOD,
+        "http_endpoint": TASKS_SUBSCRIBE_HTTP_ENDPOINT,
+        "non_terminal_behavior": "stream_live_updates",
+        "terminal_behavior": "replay_once_then_close",
+        "notes": [
+            (
+                "tasks/resubscribe itself is part of the core interoperability baseline, but "
+                "the terminal replay-once policy is deployment-specific service behavior."
+            ),
+            (
+                "Consumers should not assume replay-once terminal delivery is guaranteed by "
+                "generic A2A runtimes unless it is declared explicitly."
+            ),
+        ],
+    }
 
     method_retention: dict[str, dict[str, Any]] = {
         method: {
@@ -388,6 +428,9 @@ def build_compatibility_profile_params(
             "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
             "http_endpoints": list(CORE_HTTP_ENDPOINTS),
         },
+        "service_behaviors": {
+            TASKS_RESUBSCRIBE_METHOD: resubscribe_behavior,
+        },
         "extension_taxonomy": {
             "shared_extensions": [
                 SESSION_BINDING_EXTENSION_URI,
@@ -431,6 +474,10 @@ def build_compatibility_profile_params(
                 "Treat execution_environment fields as deployment-configured discovery "
                 "metadata rather than per-turn snapshots of temporary approvals or "
                 "runtime escalations."
+            ),
+            (
+                "Treat this service's terminal tasks/resubscribe replay-once behavior as a "
+                "declared service-level contract rather than a generic A2A baseline promise."
             ),
         ],
     }
