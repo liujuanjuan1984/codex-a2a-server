@@ -8,19 +8,19 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from codex_a2a_server.codex_client import (
+from codex_a2a_server.logging_context import bind_correlation_id
+from codex_a2a_server.upstream.client import (
     CodexClient,
     CodexStartupPrerequisiteError,
     InterruptRequestBinding,
     _PendingInterruptRequest,
     _PendingRpcRequest,
 )
-from codex_a2a_server.logging_context import bind_correlation_id
-from tests.support.helpers import (
-    make_settings,
+from tests.support.fixtures import (
     replay_codex_jsonrpc_line_fixture,
     replay_codex_notification_fixture,
 )
+from tests.support.settings import make_settings
 
 
 @pytest.mark.asyncio
@@ -221,10 +221,10 @@ def test_interrupt_request_status_uses_configured_ttl(monkeypatch) -> None:
         params={"threadId": "thr-1"},
     )
 
-    monkeypatch.setattr("codex_a2a_server.codex_client.time.monotonic", lambda: 14.0)
+    monkeypatch.setattr("codex_a2a_server.upstream.interrupts.time.monotonic", lambda: 14.0)
     assert client.resolve_interrupt_request("req-1")[0] == "active"
 
-    monkeypatch.setattr("codex_a2a_server.codex_client.time.monotonic", lambda: 15.0)
+    monkeypatch.setattr("codex_a2a_server.upstream.interrupts.time.monotonic", lambda: 15.0)
     assert client.resolve_interrupt_request("req-1")[0] == "expired"
     assert client.resolve_interrupt_request("req-1")[0] == "missing"
     assert "200" not in client._pending_server_requests
@@ -621,7 +621,7 @@ async def test_read_stdout_loop_replays_real_file_change_jsonrpc_lines() -> None
 
 @pytest.mark.asyncio
 async def test_read_stdout_loop_drops_invalid_and_non_object_json_lines(caplog) -> None:
-    with caplog.at_level("DEBUG", logger="codex_a2a_server.codex_client"):
+    with caplog.at_level("DEBUG", logger="codex_a2a_server.upstream.client"):
         fixture, events = await replay_codex_jsonrpc_line_fixture(
             "codex_app_server",
             "command_execution_output_delta.json",
@@ -990,7 +990,7 @@ async def test_dispatch_message_logs_with_pending_request_correlation_id(caplog)
     )
 
     with bind_correlation_id(None):
-        with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.codex_client"):
+        with caplog.at_level(logging.DEBUG, logger="codex_a2a_server.upstream.client"):
             await client._dispatch_message({"id": 7, "result": {"data": []}})
 
     assert future.result() == {"data": []}

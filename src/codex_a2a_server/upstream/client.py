@@ -5,27 +5,43 @@ import contextlib
 import json
 import logging
 import os
-import shlex
 import shutil
 import time
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator
 from typing import Any
 
+from codex_a2a_server import __version__
 from codex_a2a_server.config import Settings
-from codex_a2a_server.execution.tool_call_payloads import (
-    ToolCallSourceMethod,
-    as_tool_call_payload,
-    tool_call_output_delta_payload_from_notification,
-    tool_call_state_payload_from_item,
-)
 from codex_a2a_server.logging_context import (
     bind_correlation_id,
     get_correlation_id,
     install_log_record_factory,
 )
-
-from . import __version__
+from codex_a2a_server.upstream.interrupts import (
+    InterruptRequestBinding,
+    InterruptRequestError,
+    _PendingInterruptRequest,
+    build_codex_permission_interrupt_properties,
+    build_codex_question_interrupt_properties,
+    interrupt_request_status,
+)
+from codex_a2a_server.upstream.models import (
+    CodexMessage,
+    CodexRPCError,
+    CodexStartupPrerequisiteError,
+    _PendingRpcRequest,
+    _TurnTracker,
+)
+from codex_a2a_server.upstream.notification_mapping import (
+    build_tool_call_output_event,
+    build_tool_call_state_event,
+)
+from codex_a2a_server.upstream.request_mapping import (
+    build_shell_exec_params,
+    convert_request_parts_to_turn_input,
+    format_shell_response,
+    uuid_like_suffix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,332 +54,6 @@ _UNSET = _UnsetType()
 _DEFAULT_CLIENT_NAME = "codex_a2a_server"
 _DEFAULT_CLIENT_TITLE = "Codex A2A Server"
 _EVENT_QUEUE_MAXSIZE = 2048
-
-
-class CodexStartupPrerequisiteError(RuntimeError):
-    """Raised when local Codex prerequisites are not satisfied."""
-
-
-def _normalized_string(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
-def _first_string(payload: dict[str, Any], *keys: str) -> str | None:
-    for key in keys:
-        value = _normalized_string(payload.get(key))
-        if value is not None:
-            return value
-    return None
-
-
-def _mapping_value(value: Any) -> Mapping[str, Any] | None:
-    if isinstance(value, Mapping):
-        return value
-    return None
-
-
-def _first_nested_string(payload: Mapping[str, Any], *paths: tuple[str, ...]) -> str | None:
-    for path in paths:
-        current: Any = payload
-        for key in path:
-            if not isinstance(current, Mapping):
-                break
-            current = current.get(key)
-        else:
-            value = _normalized_string(current)
-            if value is not None:
-                return value
-    return None
-
-
-def _extract_string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    values: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        normalized = _normalized_string(item)
-        if normalized is None or normalized in seen:
-            continue
-        seen.add(normalized)
-        values.append(normalized)
-    return values
-
-
-def _extract_permission_patterns(params: dict[str, Any]) -> list[str]:
-    patterns = _extract_string_list(params.get("patterns"))
-    if patterns:
-        return patterns
-
-    parsed_cmd = params.get("parsedCmd")
-    if not isinstance(parsed_cmd, list):
-        return []
-
-    resolved_patterns: list[str] = []
-    seen: set[str] = set()
-    for entry in parsed_cmd:
-        if not isinstance(entry, Mapping):
-            continue
-        path = _normalized_string(entry.get("path"))
-        if path is None or path in seen:
-            continue
-        seen.add(path)
-        resolved_patterns.append(path)
-    return resolved_patterns
-
-
-def _extract_question_properties_questions(params: dict[str, Any]) -> list[Any]:
-    questions = params.get("questions")
-    if isinstance(questions, list):
-        return questions
-
-    context = _mapping_value(params.get("context"))
-    if context is not None and isinstance(context.get("questions"), list):
-        return context["questions"]
-    return []
-
-
-def _build_codex_permission_interrupt_properties(
-    *, request_key: str, session_id: str, method: str, params: dict[str, Any]
-) -> dict[str, Any]:
-    properties: dict[str, Any] = {
-        "id": request_key,
-        "sessionID": session_id,
-        "metadata": {"method": method, "raw": params},
-    }
-    display_message = _first_nested_string(
-        params,
-        ("request", "description"),
-        ("description",),
-        ("reason",),
-        ("request", "reason"),
-    )
-    if display_message is not None:
-        properties["display_message"] = display_message
-    patterns = _extract_permission_patterns(params)
-    if patterns:
-        properties["patterns"] = patterns
-    always = _extract_string_list(params.get("always"))
-    if always:
-        properties["always"] = always
-    return properties
-
-
-def _build_codex_question_interrupt_properties(
-    *, request_key: str, session_id: str, method: str, params: dict[str, Any]
-) -> dict[str, Any]:
-    properties = {
-        "id": request_key,
-        "sessionID": session_id,
-        "questions": _extract_question_properties_questions(params),
-        "metadata": {"method": method, "raw": params},
-    }
-    display_message = _first_nested_string(
-        params,
-        ("description",),
-        ("context", "description"),
-        ("prompt",),
-    )
-    if display_message is not None:
-        properties["display_message"] = display_message
-    return properties
-
-
-def _extract_tool_status(payload: dict[str, Any]) -> str | None:
-    value = _first_string(payload, "status")
-    if value is not None:
-        return value
-    state = payload.get("state")
-    if isinstance(state, dict):
-        return _first_string(state, "status")
-    return None
-
-
-def _tool_source_method(method: str) -> ToolCallSourceMethod | None:
-    parts = method.split("/")
-    if len(parts) < 2:
-        return None
-    normalized = _normalized_string(parts[1])
-    if normalized == "commandExecution":
-        return "commandExecution"
-    if normalized == "fileChange":
-        return "fileChange"
-    return None
-
-
-def _build_tool_call_output_event(method: str, params: dict[str, Any]) -> dict[str, Any] | None:
-    thread_id = _first_string(params, "threadId")
-    delta = params.get("delta")
-    if thread_id is None or not isinstance(delta, str) or delta == "":
-        return None
-
-    explicit_call_id = _first_string(params, "callID", "callId", "call_id")
-    item_id = _first_string(params, "itemId")
-    call_id = explicit_call_id or item_id
-    part_id = item_id or call_id
-    if part_id is None:
-        return None
-
-    tool = _first_string(params, "tool", "name")
-    status = _extract_tool_status(params)
-    source_method = _tool_source_method(method)
-    if source_method is None:
-        return None
-    payload = tool_call_output_delta_payload_from_notification(
-        source_method=source_method,
-        delta=delta,
-        call_id=call_id,
-        tool=tool,
-        status=status,
-    )
-    if payload is None:
-        return None
-
-    part: dict[str, Any] = {
-        "sessionID": thread_id,
-        "id": part_id,
-        "type": "tool_call",
-        "role": "assistant",
-    }
-    if item_id is not None:
-        part["messageID"] = item_id
-    if call_id is not None:
-        part["callID"] = call_id
-    if tool is not None:
-        part["tool"] = tool
-    if status is not None:
-        part["state"] = {"status": status}
-    if source_method is not None:
-        part["sourceMethod"] = source_method
-
-    return {
-        "type": "message.part.updated",
-        "properties": {
-            "part": part,
-            "delta": as_tool_call_payload(payload),
-        },
-    }
-
-
-def _build_tool_call_state_event(params: dict[str, Any]) -> dict[str, Any] | None:
-    thread_id = _first_string(params, "threadId")
-    item = params.get("item")
-    if thread_id is None or not isinstance(item, dict):
-        return None
-
-    payload = tool_call_state_payload_from_item(item)
-    if payload is None:
-        return None
-
-    part_id = _first_string(item, "id")
-    if part_id is None:
-        return None
-
-    payload_data = as_tool_call_payload(payload)
-    state_payload: dict[str, Any] = {}
-    for key in ("status", "title", "subtitle", "input", "output", "error"):
-        value = payload_data.get(key)
-        if value is not None:
-            state_payload[key] = value
-
-    part: dict[str, Any] = {
-        "sessionID": thread_id,
-        "messageID": part_id,
-        "id": part_id,
-        "type": "tool_call",
-        "role": "assistant",
-    }
-    call_id = payload_data.get("call_id")
-    if isinstance(call_id, str) and call_id:
-        part["callID"] = call_id
-    tool = payload_data.get("tool")
-    if isinstance(tool, str) and tool:
-        part["tool"] = tool
-    source_method = payload_data.get("source_method")
-    if isinstance(source_method, str) and source_method:
-        part["sourceMethod"] = source_method
-    if state_payload:
-        part["state"] = state_payload
-
-    return {
-        "type": "message.part.updated",
-        "properties": {
-            "part": part,
-            "delta": payload_data,
-        },
-    }
-
-
-@dataclass(frozen=True)
-class CodexMessage:
-    text: str
-    session_id: str
-    message_id: str | None
-    raw: dict[str, Any]
-
-
-class CodexRPCError(RuntimeError):
-    def __init__(self, *, code: int, message: str, data: Any = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.data = data
-
-
-class InterruptRequestError(RuntimeError):
-    def __init__(
-        self,
-        *,
-        error_type: str,
-        request_id: str,
-        expected_interrupt_type: str | None = None,
-        actual_interrupt_type: str | None = None,
-    ) -> None:
-        super().__init__(error_type)
-        self.error_type = error_type
-        self.request_id = request_id
-        self.expected_interrupt_type = expected_interrupt_type
-        self.actual_interrupt_type = actual_interrupt_type
-
-
-@dataclass(frozen=True)
-class InterruptRequestBinding:
-    request_id: str
-    interrupt_type: str
-    session_id: str
-    created_at: float
-
-
-@dataclass
-class _PendingInterruptRequest:
-    binding: InterruptRequestBinding
-    rpc_request_id: str | int
-    params: dict[str, Any]
-
-
-@dataclass
-class _PendingRpcRequest:
-    request_id: str
-    method: str
-    future: asyncio.Future[Any]
-    correlation_id: str | None
-
-
-@dataclass
-class _TurnTracker:
-    thread_id: str
-    turn_id: str
-    completed: asyncio.Event = field(default_factory=asyncio.Event)
-    text_chunks: list[str] = field(default_factory=list)
-    message_id: str | None = None
-    raw_turn: dict[str, Any] | None = None
-    error: str | None = None
-
-    @property
-    def text(self) -> str:
-        return "".join(self.text_chunks)
 
 
 class CodexClient:
@@ -799,13 +489,13 @@ class CodexClient:
             return
 
         if method in {"item/started", "item/completed"}:
-            event = _build_tool_call_state_event(params)
+            event = build_tool_call_state_event(params)
             if event is not None:
                 await self._enqueue_stream_event(event)
             return
 
         if method in {"item/commandExecution/outputDelta", "item/fileChange/outputDelta"}:
-            event = _build_tool_call_output_event(method, params)
+            event = build_tool_call_output_event(method, params)
             if event is not None:
                 await self._enqueue_stream_event(event)
             return
@@ -907,7 +597,7 @@ class CodexClient:
             await self._enqueue_stream_event(
                 {
                     "type": "permission.asked",
-                    "properties": _build_codex_permission_interrupt_properties(
+                    "properties": build_codex_permission_interrupt_properties(
                         request_key=request_key,
                         session_id=session_id,
                         method=method,
@@ -933,7 +623,7 @@ class CodexClient:
             await self._enqueue_stream_event(
                 {
                     "type": "question.asked",
-                    "properties": _build_codex_question_interrupt_properties(
+                    "properties": build_codex_question_interrupt_properties(
                         request_key=request_key,
                         session_id=session_id,
                         method=method,
@@ -1146,7 +836,7 @@ class CodexClient:
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "threadId": session_id,
-            "input": _convert_request_parts_to_turn_input(request),
+            "input": convert_request_parts_to_turn_input(request),
         }
         if directory:
             params["cwd"] = directory
@@ -1191,8 +881,8 @@ class CodexClient:
         # is preserved here for ownership/attribution, not to bind upstream thread context.
         result = await self._rpc_request(
             "command/exec",
-            _build_shell_exec_params(
-                command=shlex.split(command_text),
+            build_shell_exec_params(
+                command_text=command_text,
                 directory=directory,
                 default_workspace_root=self._workspace_root,
             ),
@@ -1207,7 +897,7 @@ class CodexClient:
             "parts": [
                 {
                     "type": "text",
-                    "text": _format_shell_response(result),
+                    "text": format_shell_response(result),
                 }
             ],
             "raw": result,
@@ -1217,10 +907,10 @@ class CodexClient:
         self,
         binding: InterruptRequestBinding,
     ) -> str:
-        expires_at = binding.created_at + float(self._interrupt_request_ttl_seconds)
-        if expires_at <= time.monotonic():
-            return "expired"
-        return "active"
+        return interrupt_request_status(
+            binding,
+            interrupt_request_ttl_seconds=self._interrupt_request_ttl_seconds,
+        )
 
     def resolve_interrupt_request(
         self, request_id: str
@@ -1383,56 +1073,3 @@ class CodexClient:
         )
         self.discard_interrupt_request(request_id)
         return True
-
-
-def _convert_request_parts_to_turn_input(request: dict[str, Any]) -> list[dict[str, Any]]:
-    parts = request.get("parts")
-    if not isinstance(parts, list):
-        raise RuntimeError("request.parts must be an array")
-    converted: list[dict[str, Any]] = []
-    for part in parts:
-        if not isinstance(part, dict):
-            raise RuntimeError("request.parts items must be objects")
-        part_type = part.get("type")
-        if part_type != "text":
-            raise RuntimeError("Only text request.parts are currently supported")
-        text = part.get("text")
-        if not isinstance(text, str):
-            raise RuntimeError("request.parts[].text must be a string")
-        converted.append({"type": "text", "text": text, "text_elements": []})
-    return converted
-
-
-def _format_shell_response(result: dict[str, Any]) -> str:
-    exit_code = result.get("exitCode")
-    stdout = result.get("stdout")
-    stderr = result.get("stderr")
-    lines: list[str] = [f"exit_code: {exit_code}"]
-    if isinstance(stdout, str) and stdout:
-        lines.append("stdout:")
-        lines.append(stdout.rstrip())
-    if isinstance(stderr, str) and stderr:
-        lines.append("stderr:")
-        lines.append(stderr.rstrip())
-    return "\n".join(lines)
-
-
-def _build_shell_exec_params(
-    *,
-    command: list[str],
-    directory: str | None,
-    default_workspace_root: str | None,
-) -> dict[str, Any]:
-    params: dict[str, Any] = {"command": command}
-    if directory:
-        params["cwd"] = directory
-    elif default_workspace_root:
-        params["cwd"] = default_workspace_root
-    return params
-
-
-def uuid_like_suffix(value: str) -> str:
-    normalized = value.strip().replace(" ", "-")
-    if not normalized:
-        return "empty"
-    return normalized[:32]

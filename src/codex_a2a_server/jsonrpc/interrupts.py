@@ -8,7 +8,6 @@ from a2a.types import A2AError, InternalError, JSONRPCError, JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
-from codex_a2a_server.codex_client import InterruptRequestError
 from codex_a2a_server.jsonrpc.errors import (
     ERR_INTERRUPT_NOT_FOUND,
     ERR_UPSTREAM_HTTP_ERROR,
@@ -32,6 +31,7 @@ from codex_a2a_server.jsonrpc.params import (
     parse_question_reject_params,
     parse_question_reply_params,
 )
+from codex_a2a_server.upstream.interrupts import InterruptRequestError
 
 if TYPE_CHECKING:
     from codex_a2a_server.jsonrpc.application import CodexSessionQueryJSONRPCApplication

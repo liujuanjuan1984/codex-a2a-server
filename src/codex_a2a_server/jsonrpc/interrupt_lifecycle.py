@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response
 
-from codex_a2a_server.codex_client import InterruptRequestBinding, InterruptRequestError
 from codex_a2a_server.jsonrpc.errors import (
     ERR_INTERRUPT_EXPIRED,
     ERR_INTERRUPT_NOT_FOUND,
     ERR_INTERRUPT_TYPE_MISMATCH,
     interrupt_error_response,
 )
+from codex_a2a_server.upstream.interrupts import InterruptRequestBinding, InterruptRequestError
 
 if TYPE_CHECKING:
     from codex_a2a_server.jsonrpc.application import CodexSessionQueryJSONRPCApplication

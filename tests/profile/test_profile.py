@@ -1,5 +1,5 @@
 from codex_a2a_server.profile.runtime import build_runtime_profile
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def test_runtime_profile_splits_stable_deployment_and_runtime_features() -> None:

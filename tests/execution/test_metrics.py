@@ -22,7 +22,7 @@ from codex_a2a_server.metrics import (
 )
 from codex_a2a_server.server.request_handler import CodexRequestHandler
 from tests.server.test_request_handler import _make_message_send_params
-from tests.support.helpers import DummyEventQueue
+from tests.support.context import DummyEventQueue
 
 
 async def _empty_async_stream() -> None:

@@ -9,7 +9,7 @@ from codex_a2a_server.contracts.extensions import (
     WIRE_CONTRACT_EXTENSION_URI,
 )
 from codex_a2a_server.server.agent_card import build_agent_card
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def test_agent_card_description_reflects_actual_transport_capabilities() -> None:

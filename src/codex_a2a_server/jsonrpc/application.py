@@ -14,10 +14,10 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from codex_a2a_server.codex_client import CodexClient
 from codex_a2a_server.jsonrpc.interrupts import handle_interrupt_callback_request
 from codex_a2a_server.jsonrpc.session_control import handle_session_control_request
 from codex_a2a_server.jsonrpc.session_query import handle_session_query_request
+from codex_a2a_server.upstream.client import CodexClient
 
 
 class CodexSessionQueryJSONRPCApplication(A2AFastAPIApplication):

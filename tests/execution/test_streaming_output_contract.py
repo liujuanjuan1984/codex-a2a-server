@@ -6,7 +6,6 @@ import pytest
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 import codex_a2a_server.execution.streaming as streaming_module
-from codex_a2a_server.codex_client import CodexMessage
 from codex_a2a_server.contracts.extensions import build_streaming_extension_params
 from codex_a2a_server.execution.executor import CodexAgentExecutor
 from codex_a2a_server.execution.streaming import (
@@ -16,12 +15,10 @@ from codex_a2a_server.execution.streaming import (
     extract_stream_part_id,
     extract_stream_session_id,
 )
-from tests.support.helpers import (
-    DummyEventQueue,
-    make_request_context,
-    make_settings,
-    replay_codex_notification_fixture,
-)
+from codex_a2a_server.upstream.client import CodexMessage
+from tests.support.context import DummyEventQueue, make_request_context
+from tests.support.fixtures import replay_codex_notification_fixture
+from tests.support.settings import make_settings
 
 
 class DummyStreamingClient:

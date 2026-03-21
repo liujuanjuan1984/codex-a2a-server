@@ -4,9 +4,10 @@ from unittest.mock import AsyncMock
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
-from codex_a2a_server.codex_client import CodexClient
 from codex_a2a_server.execution.executor import CodexAgentExecutor
-from tests.support.helpers import make_request_context_mock, make_settings
+from codex_a2a_server.upstream.client import CodexClient
+from tests.support.context import make_request_context_mock
+from tests.support.settings import make_settings
 
 
 @pytest.fixture

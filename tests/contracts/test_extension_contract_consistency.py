@@ -23,8 +23,8 @@ from codex_a2a_server.contracts.extensions import (
 from codex_a2a_server.profile.runtime import build_runtime_profile
 from codex_a2a_server.server.agent_card import build_agent_card
 from codex_a2a_server.server.application import create_app
-from tests.support.helpers import DummySessionQueryCodexClient as DummyCodexClient
-from tests.support.helpers import make_settings
+from tests.support.dummy_clients import DummySessionQueryCodexClient as DummyCodexClient
+from tests.support.settings import make_settings
 
 
 def _extract_heading_section(markdown: str, heading: str) -> str:

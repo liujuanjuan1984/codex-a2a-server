@@ -20,7 +20,6 @@ from a2a.types import (
     TextPart,
 )
 
-from codex_a2a_server.codex_client import CodexClient
 from codex_a2a_server.execution.cancellation import (
     await_cancel_cleanup,
     emit_canceled_status,
@@ -38,6 +37,7 @@ from codex_a2a_server.execution.response_emitter import (
 from codex_a2a_server.execution.session_runtime import SessionRuntime
 from codex_a2a_server.execution.stream_state import StreamOutputState
 from codex_a2a_server.execution.streaming import consume_codex_stream
+from codex_a2a_server.upstream.client import CodexClient
 
 from .output_mapping import enqueue_artifact_update, extract_token_usage, merge_token_usage
 

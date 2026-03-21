@@ -10,7 +10,6 @@ from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from fastapi import FastAPI
 
-from codex_a2a_server.codex_client import CodexClient
 from codex_a2a_server.config import Settings
 from codex_a2a_server.contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
@@ -26,6 +25,7 @@ from codex_a2a_server.server.agent_card import build_agent_card
 from codex_a2a_server.server.call_context import IdentityAwareCallContextBuilder
 from codex_a2a_server.server.openapi import patch_openapi_contract
 from codex_a2a_server.server.request_handler import CodexRequestHandler
+from codex_a2a_server.upstream.client import CodexClient
 
 from .http_middlewares import install_http_middlewares
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from codex_a2a_server.codex_client import CodexClient
+from codex_a2a_server.upstream.client import CodexClient
 
 
 def resolve_and_validate_directory(

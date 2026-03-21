@@ -13,7 +13,8 @@ from starlette.requests import Request
 
 from codex_a2a_server.server.agent_card import build_agent_card
 from codex_a2a_server.server.application import create_app
-from tests.support.helpers import DummyChatCodexClient, make_settings
+from tests.support.dummy_clients import DummyChatCodexClient
+from tests.support.settings import make_settings
 
 
 async def _empty_async_stream():
